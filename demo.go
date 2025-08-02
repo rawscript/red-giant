@@ -33,6 +33,55 @@ func NewReceiver(totalChunks int, workerCount int) *ReceiverOrchestrator {
 	}
 }
 
+// AdaptiveReceiver dynamically adjusts worker count based on sender's adaptive parameters
+func (r *ReceiverOrchestrator) AdaptToTraffic(sender *RedGiantOrchestrator) {
+	if !sender.adaptiveMode {
+		return
+	}
+	
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				params := sender.GetAdaptiveParams()
+				
+				// Adjust worker pool if needed
+				currentWorkers := cap(r.workerPool)
+				if params.WorkerCount != currentWorkers {
+					fmt.Printf("🔄 Adapting receiver workers: %d → %d\n", 
+						currentWorkers, params.WorkerCount)
+					
+					// Create new worker pool with adjusted size
+					newPool := make(chan struct{}, params.WorkerCount)
+					
+					r.mu.Lock()
+					oldPool := r.workerPool
+					r.workerPool = newPool
+					r.mu.Unlock()
+					
+					// Drain old pool
+					for len(oldPool) > 0 {
+						<-oldPool
+					}
+					
+					// Start additional workers if needed
+					if params.WorkerCount > currentWorkers {
+						for i := currentWorkers; i < params.WorkerCount; i++ {
+							go r.chunkWorker(sender, i)
+						}
+					}
+				}
+				
+			case <-r.completionChan:
+				return
+			}
+		}
+	}()
+}
+
 func (r *ReceiverOrchestrator) ConstructFile(sender *RedGiantOrchestrator) {
 	fmt.Printf("📡 Receiver: Starting concurrent file construction\n")
 	
@@ -196,9 +245,10 @@ func main() {
 	fmt.Printf("   ✓ TLS-like channel established\n")
 	fmt.Printf("   ✓ Mutual authentication complete\n\n")
 	
-	// 🧭 2. Create orchestrator with manifest
+	// 🧭 2. Create orchestrator with manifest and traffic awareness
 	fmt.Printf("🧭 Phase 2: Manifest Transmission\n")
-	sender := NewRedGiantOrchestrator(sampleData, chunkSize)
+	adaptiveMode := true // Enable traffic-aware adaptation
+	sender := NewRedGiantOrchestrator(sampleData, chunkSize, adaptiveMode)
 	defer sender.Cleanup()
 	
 	// 📡 3. Setup receiver with concurrent workers
@@ -207,8 +257,10 @@ func main() {
 	workerCount := 4 // Concurrent workers for chunk processing
 	receiver := NewReceiver(totalChunks, workerCount)
 	receiver.ConstructFile(sender)
+	receiver.AdaptToTraffic(sender) // Enable traffic-aware adaptation
 	fmt.Printf("   ✓ Buffer allocated, chunk placeholders ready\n")
-	fmt.Printf("   ✓ %d concurrent workers initialized\n\n", workerCount)
+	fmt.Printf("   ✓ %d concurrent workers initialized\n")
+	fmt.Printf("   ✓ Traffic-aware adaptation enabled\n\n", workerCount)
 	
 	// 🛠 4. Begin exposure process
 	fmt.Printf("🛠 Phase 4: Real-Time Exposure\n")
@@ -226,10 +278,22 @@ func main() {
 		fmt.Printf("   ❌ Integrity check FAILED\n")
 	}
 	
+	// Display final network metrics
+	if sender.adaptiveMode {
+		metrics := sender.trafficMonitor.GetCurrentMetrics()
+		fmt.Printf("\n📊 Final Network Metrics:\n")
+		fmt.Printf("   • Bandwidth: %.2f KB/s\n", metrics.Bandwidth/1024)
+		fmt.Printf("   • Latency: %v\n", metrics.Latency)
+		fmt.Printf("   • Packet Loss: %.2f%%\n", metrics.PacketLoss*100)
+		fmt.Printf("   • Congestion: %.2f%%\n", metrics.Congestion*100)
+		fmt.Printf("   • Samples: %d\n", metrics.SampleCount)
+	}
+	
 	fmt.Printf("\n🎯 Red Giant Protocol demonstration complete!\n")
 	fmt.Printf("   • Low-level C exposure mechanics ✓\n")
 	fmt.Printf("   • High-level Go orchestration ✓\n")
 	fmt.Printf("   • Concurrent chunk processing ✓\n")
+	fmt.Printf("   • Traffic-aware adaptation ✓\n")
 	fmt.Printf("   • Real-time streaming support ✓\n")
 	fmt.Printf("   • Pub-sub notification system ✓\n")
 	fmt.Printf("   • Worker pool concurrency ✓\n")

@@ -16,15 +16,18 @@ import (
 	"unsafe"
 )
 
-// RedGiantOrchestrator - High-level Go coordination
+// RedGiantOrchestrator - High-level Go coordination with traffic awareness
 type RedGiantOrchestrator struct {
-	surface    *C.rg_exposure_surface_t
-	fileData   []byte
-	chunkSize  int
-	totalSize  int64
-	manifest   *RedGiantManifest
-	mu         sync.RWMutex
-	subscribers []chan ChunkNotification
+	surface       *C.rg_exposure_surface_t
+	fileData      []byte
+	chunkSize     int
+	totalSize     int64
+	manifest      *RedGiantManifest
+	mu            sync.RWMutex
+	subscribers   []chan ChunkNotification
+	trafficMonitor *TrafficMonitor
+	adaptiveMode  bool
+	currentParams AdaptiveParams
 }
 
 type RedGiantManifest struct {
@@ -43,8 +46,8 @@ type ChunkNotification struct {
 	Timestamp time.Time
 }
 
-// NewRedGiantOrchestrator creates the orchestration layer
-func NewRedGiantOrchestrator(fileData []byte, chunkSize int) *RedGiantOrchestrator {
+// NewRedGiantOrchestrator creates the orchestration layer with optional traffic monitoring
+func NewRedGiantOrchestrator(fileData []byte, chunkSize int, adaptiveMode bool) *RedGiantOrchestrator {
 	totalSize := int64(len(fileData))
 	totalChunks := int((totalSize + int64(chunkSize) - 1) / int64(chunkSize))
 	
@@ -78,14 +81,30 @@ func NewRedGiantOrchestrator(fileData []byte, chunkSize int) *RedGiantOrchestrat
 		log.Fatal("Failed to create exposure surface")
 	}
 	
-	return &RedGiantOrchestrator{
-		surface:     surface,
-		fileData:    fileData,
-		chunkSize:   chunkSize,
-		totalSize:   totalSize,
-		manifest:    manifest,
-		subscribers: make([]chan ChunkNotification, 0),
+	orchestrator := &RedGiantOrchestrator{
+		surface:      surface,
+		fileData:     fileData,
+		chunkSize:    chunkSize,
+		totalSize:    totalSize,
+		manifest:     manifest,
+		subscribers:  make([]chan ChunkNotification, 0),
+		adaptiveMode: adaptiveMode,
+		currentParams: AdaptiveParams{
+			ChunkSize:       chunkSize,
+			ExposureCadence: manifest.ExposureCadence,
+			WorkerCount:     4,
+			BufferSize:      chunkSize * 8,
+			Reason:          "Initial",
+		},
 	}
+	
+	// Initialize traffic monitor if adaptive mode is enabled
+	if adaptiveMode {
+		orchestrator.trafficMonitor = NewTrafficMonitor()
+		go orchestrator.handleAdaptiveUpdates()
+	}
+	
+	return orchestrator
 }
 
 // Subscribe to chunk exposure notifications (pub-sub model)
@@ -98,15 +117,27 @@ func (rg *RedGiantOrchestrator) Subscribe() <-chan ChunkNotification {
 	return ch
 }
 
-// BeginExposure starts the orchestrated exposure process
+// BeginExposure starts the orchestrated exposure process with traffic adaptation
 func (rg *RedGiantOrchestrator) BeginExposure() {
 	fmt.Printf("🧭 Red Giant Protocol - Beginning Exposure\n")
 	fmt.Printf("📋 Manifest: %s (%d bytes, %d chunks)\n", 
 		rg.manifest.FileID, rg.manifest.TotalSize, rg.manifest.TotalChunks)
 	
+	if rg.adaptiveMode {
+		fmt.Printf("🌐 Traffic-aware adaptive mode: ENABLED\n")
+		rg.trafficMonitor.StartMonitoring()
+	}
+	
 	go func() {
 		for i := 0; i < rg.manifest.TotalChunks; i++ {
-			// Calculate chunk boundaries
+			startTime := time.Now()
+			
+			// Get current adaptive parameters
+			rg.mu.RLock()
+			currentCadence := rg.currentParams.ExposureCadence
+			rg.mu.RUnlock()
+			
+			// Calculate chunk boundaries (may be dynamically sized in future)
 			start := i * rg.chunkSize
 			end := start + rg.chunkSize
 			if end > len(rg.fileData) {
@@ -123,6 +154,17 @@ func (rg *RedGiantOrchestrator) BeginExposure() {
 			)
 			
 			if success {
+				// Record network sample for traffic monitoring
+				if rg.adaptiveMode {
+					sample := NetworkSample{
+						Timestamp:        time.Now(),
+						ResponseTime:     time.Since(startTime),
+						BytesTransferred: len(chunkData),
+						Success:          true,
+					}
+					rg.trafficMonitor.RecordSample(sample)
+				}
+				
 				// Notify subscribers
 				notification := ChunkNotification{
 					ChunkID:   i,
@@ -138,16 +180,61 @@ func (rg *RedGiantOrchestrator) BeginExposure() {
 					}
 				}
 				rg.mu.RUnlock()
+			} else if rg.adaptiveMode {
+				// Record failed sample
+				sample := NetworkSample{
+					Timestamp:        time.Now(),
+					ResponseTime:     time.Since(startTime),
+					BytesTransferred: 0,
+					Success:          false,
+				}
+				rg.trafficMonitor.RecordSample(sample)
 			}
 			
-			// Respect exposure cadence
-			time.Sleep(rg.manifest.ExposureCadence)
+			// Respect adaptive exposure cadence
+			time.Sleep(currentCadence)
 		}
 		
 		// Raise the red flag
 		C.rg_raise_red_flag(rg.surface)
 		fmt.Printf("🚩 RED FLAG RAISED - Exposure complete!\n")
+		
+		if rg.adaptiveMode {
+			rg.trafficMonitor.Stop()
+		}
 	}()
+}
+
+// handleAdaptiveUpdates processes traffic-aware parameter updates
+func (rg *RedGiantOrchestrator) handleAdaptiveUpdates() {
+	if !rg.adaptiveMode || rg.trafficMonitor == nil {
+		return
+	}
+	
+	adaptiveChan := rg.trafficMonitor.StartMonitoring()
+	
+	for params := range adaptiveChan {
+		rg.mu.Lock()
+		oldParams := rg.currentParams
+		rg.currentParams = params
+		rg.mu.Unlock()
+		
+		// Log significant changes
+		if params.ChunkSize != oldParams.ChunkSize || 
+		   params.ExposureCadence != oldParams.ExposureCadence {
+			fmt.Printf("🌐 Network adaptation: %s\n", params.Reason)
+			fmt.Printf("   • Chunk size: %d → %d bytes\n", oldParams.ChunkSize, params.ChunkSize)
+			fmt.Printf("   • Cadence: %v → %v\n", oldParams.ExposureCadence, params.ExposureCadence)
+			fmt.Printf("   • Workers: %d → %d\n", oldParams.WorkerCount, params.WorkerCount)
+		}
+	}
+}
+
+// GetAdaptiveParams returns current adaptive parameters (thread-safe)
+func (rg *RedGiantOrchestrator) GetAdaptiveParams() AdaptiveParams {
+	rg.mu.RLock()
+	defer rg.mu.RUnlock()
+	return rg.currentParams
 }
 
 // PullChunk allows receiver to actively pull exposed chunks
