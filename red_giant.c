@@ -159,8 +159,7 @@ bool rg_is_complete(const rg_exposure_surface_t* surface) {
     return surface && surface->red_flag_raised && 
            surface->exposed_count == surface->manifest.total_chunks;
 }
-// Ba
-tch exposure for maximum throughput
+// Batch exposure for maximum throughput
 uint32_t rg_expose_batch(rg_exposure_surface_t* surface, uint32_t start_chunk, uint32_t count, const void** data_ptrs, uint32_t* sizes) {
     if (!surface || start_chunk + count > surface->manifest.total_chunks) return 0;
     
