@@ -66,13 +66,26 @@ typedef struct {
     uint64_t start_time;
 } rg_exposure_surface_t;
 
-// Core C functions for low-level operations
+// High-performance C functions with optimizations
 rg_exposure_surface_t* rg_create_surface(const rg_manifest_t* manifest);
 void rg_destroy_surface(rg_exposure_surface_t* surface);
-bool rg_expose_chunk(rg_exposure_surface_t* surface, uint32_t chunk_id, const void* data);
-const rg_chunk_t* rg_peek_chunk(rg_exposure_surface_t* surface, uint32_t chunk_id);
-bool rg_pull_chunk(rg_exposure_surface_t* surface, uint32_t chunk_id, void* dest_buffer);
+
+// Fast chunk operations with memory optimization
+bool rg_expose_chunk_fast(rg_exposure_surface_t* surface, uint32_t chunk_id, const void* data, uint32_t size);
+const rg_chunk_t* rg_peek_chunk_fast(rg_exposure_surface_t* surface, uint32_t chunk_id);
+bool rg_pull_chunk_fast(rg_exposure_surface_t* surface, uint32_t chunk_id, void* dest_buffer, uint32_t* size);
+
+// Batch operations for better performance
+uint32_t rg_expose_batch(rg_exposure_surface_t* surface, uint32_t start_chunk, uint32_t count, const void** data_ptrs, uint32_t* sizes);
+uint32_t rg_pull_batch(rg_exposure_surface_t* surface, uint32_t start_chunk, uint32_t count, void** dest_buffers, uint32_t* sizes);
+
+// Status and control
 void rg_raise_red_flag(rg_exposure_surface_t* surface);
 bool rg_is_complete(const rg_exposure_surface_t* surface);
+uint64_t rg_get_performance_stats(const rg_exposure_surface_t* surface, uint32_t* throughput_mbps);
+
+// Memory management helpers
+void* rg_alloc_aligned(size_t size, size_t alignment);
+void rg_free_aligned(void* ptr);
 
 #endif // RED_GIANT_H

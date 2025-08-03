@@ -2,9 +2,18 @@ CC=gcc
 CFLAGS=-std=c99 -Wall -Wextra -O2 -fPIC
 GO=go
 
-.PHONY: all clean demo adaptive pure concurrent traffic test
+.PHONY: all clean demo adaptive pure concurrent traffic fast ultra benchmark test
 
-all: pure
+all: benchmark
+
+benchmark: benchmark_demo.go
+	$(GO) run benchmark_demo.go
+
+ultra: ultra_fast_demo.go
+	$(GO) run ultra_fast_demo.go
+
+fast: red_giant.c red_giant.h fast_demo.go
+	$(GO) run fast_demo.go
 
 pure: pure_go_demo.go
 	$(GO) run pure_go_demo.go
@@ -36,7 +45,10 @@ install-deps:
 help:
 	@echo "Red Giant Protocol - Build Commands"
 	@echo "=================================="
-	@echo "make pure       - Run the pure Go demonstration (recommended)"
+	@echo "make benchmark  - Run the performance benchmark suite (FASTEST)"
+	@echo "make ultra      - Run the ultra-fast pure Go demonstration"
+	@echo "make fast       - Run the high-performance C/Go demonstration (requires GCC)"
+	@echo "make pure       - Run the pure Go demonstration"
 	@echo "make concurrent - Run the concurrent processing demonstration"
 	@echo "make traffic    - Run the traffic-aware adaptive demonstration"
 	@echo "make demo       - Run the basic protocol demonstration (requires GCC)"

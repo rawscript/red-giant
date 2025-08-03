@@ -1,0 +1,98 @@
+🏁 Red Giant Protocol - Performance Benchmark Suite
+═══════════════════════════════════════════════════
+💻 System: 4 CPU cores, GOMAXPROCS: 4
+🚀 Go version: go1.23.2
+
+
+🏁 BENCHMARK: Small Files
+==================================================
+📊 Data: 1.00 MB, Chunk: 16 KB
+📦 Chunks: 64
+🏁 Benchmark Receiver: 16 maximum-speed workers
+🏁 Benchmark Red Giant Protocol - Maximum Speed Test
+📊 64 chunks, 4 workers
+🏁 Waiting for benchmark completion...
+✅ Benchmark processing complete!
+🏁 Benchmark Results:
+[RED FLAG] 🏁 Benchmark exposure complete!
+   • Total bytes: 1048560 (1.00 MB)
+   • Chunks: 64/64 (100.0% success)
+   • Total time: 7.1112ms
+   • Receiver throughput: 140.62 MB/s
+   • Sender throughput: 142.85 MB/s
+   • Exposure time: 7 ms
+   • Workers: 16
+   • CPU cores: 4
+✅ Benchmark PASSED
+
+🏁 BENCHMARK: Medium Files
+==================================================
+📊 Data: 10.00 MB, Chunk: 64 KB
+📦 Chunks: 160
+🏁 Benchmark Receiver: 16 maximum-speed workers
+🏁 Benchmark Red Giant Protocol - Maximum Speed Test
+📊 160 chunks, 4 workers
+🏁 Waiting for benchmark completion...
+[RED FLAG] 🏁 Benchmark exposure complete!
+✅ Benchmark processing complete!
+🏁 Benchmark Results:
+   • Total bytes: 10485750 (10.00 MB)
+   • Chunks: 160/160 (100.0% success)
+   • Total time: 21.8628ms
+   • Receiver throughput: 457.40 MB/s
+   • Sender throughput: 476.19 MB/s
+   • Exposure time: 21 ms
+   • Workers: 16
+   • CPU cores: 4
+✅ Benchmark PASSED
+
+🏁 BENCHMARK: Large Files
+==================================================
+📊 Data: 50.00 MB, Chunk: 256 KB
+📦 Chunks: 200
+🏁 Benchmark Receiver: 16 maximum-speed workers
+🏁 Benchmark Red Giant Protocol - Maximum Speed Test
+📊 200 chunks, 4 workers
+🏁 Waiting for benchmark completion...
+[RED FLAG] 🏁 Benchmark exposure complete!
+✅ Benchmark processing complete!
+🏁 Benchmark Results:
+   • Total bytes: 52428780 (50.00 MB)
+   • Chunks: 200/200 (100.0% success)
+   • Total time: 91.4537ms
+   • Receiver throughput: 546.72 MB/s
+   • Sender throughput: 549.45 MB/s
+   • Exposure time: 91 ms
+   • Workers: 16
+   • CPU cores: 4
+✅ Benchmark PASSED
+
+🏁 BENCHMARK: Huge Files
+==================================================
+📊 Data: 100.00 MB, Chunk: 512 KB
+📦 Chunks: 200
+🏁 Benchmark Receiver: 16 maximum-speed workers
+🏁 Benchmark Red Giant Protocol - Maximum Speed Test
+📊 200 chunks, 4 workers
+🏁 Waiting for benchmark completion...
+[RED FLAG] 🏁 Benchmark exposure complete!
+✅ Benchmark processing complete!
+🏁 Benchmark Results:
+   • Total bytes: 104857590 (100.00 MB)
+   • Chunks: 200/200 (100.0% success)
+   • Total time: 367.6594ms
+   • Receiver throughput: 271.99 MB/s
+   • Sender throughput: 272.48 MB/s
+   • Exposure time: 367 ms
+   • Workers: 16
+   • CPU cores: 4
+✅ Benchmark PASSED
+
+🏁 Red Giant Protocol Benchmark Suite Complete!
+   • Lock-free atomic operations ✓
+   • Multi-core parallel processing ✓
+   • Zero-copy optimizations ✓
+   • Maximum CPU utilization ✓
+   • Scalable worker pools ✓
+
+Check benchmark_output.txt for detailed results!
