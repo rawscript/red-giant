@@ -2,9 +2,18 @@ CC=gcc
 CFLAGS=-std=c99 -Wall -Wextra -O2 -fPIC
 GO=go
 
-.PHONY: all clean demo adaptive test
+.PHONY: all clean demo adaptive pure concurrent traffic test
 
-all: demo
+all: pure
+
+pure: pure_go_demo.go
+	$(GO) run pure_go_demo.go
+
+concurrent: concurrent_demo.go
+	$(GO) run concurrent_demo.go
+
+traffic: traffic_demo.go
+	$(GO) run traffic_demo.go
 
 demo: red_giant.c red_giant.h main.go demo.go
 	$(GO) run demo.go main.go
@@ -27,8 +36,11 @@ install-deps:
 help:
 	@echo "Red Giant Protocol - Build Commands"
 	@echo "=================================="
-	@echo "make demo     - Run the basic protocol demonstration"
-	@echo "make adaptive - Run the traffic-aware adaptive demonstration"
-	@echo "make test     - Run C unit tests"
-	@echo "make clean    - Clean build artifacts"
-	@echo "make help     - Show this help message"
+	@echo "make pure       - Run the pure Go demonstration (recommended)"
+	@echo "make concurrent - Run the concurrent processing demonstration"
+	@echo "make traffic    - Run the traffic-aware adaptive demonstration"
+	@echo "make demo       - Run the basic protocol demonstration (requires GCC)"
+	@echo "make adaptive   - Run the full adaptive demonstration (requires GCC)"
+	@echo "make test       - Run C unit tests"
+	@echo "make clean      - Clean build artifacts"
+	@echo "make help       - Show this help message"

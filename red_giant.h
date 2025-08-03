@@ -1,14 +1,20 @@
-// Red Giant Protocol - C Core Header
+// Red Giant Protocol - High-Performance C Core Header
 #ifndef RED_GIANT_H
 #define RED_GIANT_H
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <string.h>
+#include <stdlib.h>
+#include <time.h>
 
-#define RG_MAX_CHUNK_SIZE 65536
-#define RG_MAX_MANIFEST_SIZE 4096
+// Optimized constants for high performance
+#define RG_MAX_CHUNK_SIZE (1024 * 1024)  // 1MB max chunks
+#define RG_MAX_MANIFEST_SIZE 8192
 #define RG_RED_FLAG_MARKER 0xDEADBEEF
+#define RG_CACHE_LINE_SIZE 64
+#define RG_MAX_CONCURRENT_CHUNKS 256
 
 // Protocol message types
 typedef enum {
@@ -31,24 +37,33 @@ typedef struct {
     uint8_t hash[32]; // SHA-256 of complete file
 } rg_manifest_t;
 
-// Chunk exposure structure
-typedef struct {
+// High-performance chunk structure with cache alignment
+typedef struct __attribute__((aligned(RG_CACHE_LINE_SIZE))) {
     uint32_t sequence_id;
     uint32_t data_size;
     uint64_t offset;
     uint8_t chunk_hash[16]; // MD5 for quick validation
-    bool is_exposed;
+    volatile bool is_exposed;  // Volatile for thread safety
     void* data_ptr;
+    uint64_t exposure_timestamp;
+    uint32_t pull_count;       // Track how many times pulled
+    uint32_t padding;          // Ensure cache line alignment
 } rg_chunk_t;
 
-// Exposure surface - the core abstraction
+// High-performance exposure surface with memory pools
 typedef struct {
     rg_manifest_t manifest;
     rg_chunk_t* chunks;
-    uint32_t exposed_count;
-    bool red_flag_raised;
+    volatile uint32_t exposed_count;  // Atomic operations
+    volatile bool red_flag_raised;
     void* shared_buffer;
     size_t buffer_size;
+    void* memory_pool;                // Pre-allocated memory pool
+    size_t pool_size;
+    uint32_t* free_slots;            // Free slot tracking
+    uint32_t free_slot_count;
+    uint64_t total_bytes_exposed;
+    uint64_t start_time;
 } rg_exposure_surface_t;
 
 // Core C functions for low-level operations
