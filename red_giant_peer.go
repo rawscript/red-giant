@@ -1,3 +1,4 @@
+
 // Red Giant Protocol - Peer-to-Peer Client
 package main
 
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -282,8 +282,12 @@ func main() {
 		}
 		fmt.Printf("📁 Available files (%d):\n", files.Count)
 		for i, file := range files.Files {
+			hashDisplay := file.Hash
+			if len(hashDisplay) > 8 {
+				hashDisplay = hashDisplay[:8] + "..."
+			}
 			fmt.Printf("  [%d] %s\n", i+1, file.Name)
-			fmt.Printf("      ID: %s\n", file.Hash[:8]+"...")
+			fmt.Printf("      ID: %s\n", hashDisplay)
 			fmt.Printf("      Size: %d bytes (%.2f MB)\n", file.Size, float64(file.Size)/(1024*1024))
 			fmt.Printf("      Peer: %s\n", file.PeerID)
 			fmt.Printf("      Uploaded: %v\n\n", file.UploadedAt.Format("2006-01-02 15:04:05"))
@@ -302,7 +306,11 @@ func main() {
 		}
 		fmt.Printf("🔍 Search results for '%s' (%d files):\n", pattern, files.Count)
 		for i, file := range files.Files {
-			fmt.Printf("  [%d] %s (ID: %s)\n", i+1, file.Name, file.Hash[:8]+"...")
+			hashDisplay := file.Hash
+			if len(hashDisplay) > 8 {
+				hashDisplay = hashDisplay[:8] + "..."
+			}
+			fmt.Printf("  [%d] %s (ID: %s)\n", i+1, file.Name, hashDisplay)
 		}
 
 	case "share":

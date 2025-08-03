@@ -8,34 +8,62 @@ Your Red Giant Protocol server is currently running with the **high-performance 
 - **Health Check**: http://localhost:8080/health
 - **Metrics**: http://localhost:8080/metrics
 
-## 📁 How to Send Files
+## 🌐 Complete P2P Communication System
 
-### Method 1: Using the File Sender (Easiest)
+### 📁 File Sharing (Peer-to-Peer)
 ```bash
-# Send any file
-go run send_file.go README.md
-go run send_file.go yourfile.pdf
-go run send_file.go *.jpg
+# Upload files to the P2P network
+go run red_giant_peer.go upload README.md
+go run red_giant_peer.go upload document.pdf
+go run red_giant_peer.go upload *.jpg
 
-# Send to different server
-go run send_file.go file.zip http://your-server:8080
+# List all files in the network
+go run red_giant_peer.go list
+
+# Download files by ID
+go run red_giant_peer.go download abc123 downloaded_file.pdf
+
+# Search for specific files
+go run red_giant_peer.go search "*.pdf"
+
+# Share entire folders
+go run red_giant_peer.go share ./my_documents
 ```
 
-### Method 2: Using curl
+### 💬 Real-time Chat System
 ```bash
-# Send any file via HTTP POST
-curl -X POST http://localhost:8080/process \
-     -H "Content-Type: application/octet-stream" \
-     --data-binary "@yourfile.dat"
+# Start chat as Alice (Terminal 1)
+go run red_giant_chat.go alice
+
+# Start chat as Bob (Terminal 2)
+go run red_giant_chat.go bob
+
+# Now Alice and Bob can chat in real-time!
+# Commands: /msg <user> <message>, /history, /help
 ```
 
-### Method 3: Using the Client Library
+### 🌐 Network Discovery & Monitoring
 ```bash
-# Process a file
-go run client.go file README.md
+# Discover all files in the network
+go run red_giant_network.go discover
 
-# Run performance benchmark
-go run client.go benchmark
+# Get network statistics
+go run red_giant_network.go stats
+
+# Test network performance
+go run red_giant_network.go test
+
+# Monitor network activity
+go run red_giant_network.go monitor 60s
+```
+
+### 🚀 Quick Demo
+```bash
+# Run complete P2P demo
+go run demo_p2p.go
+
+# Or quick test
+go run demo_p2p.go quick
 ```
 
 ## 🎯 What You Have (Clean & Production Ready)

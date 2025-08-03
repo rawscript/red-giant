@@ -17,19 +17,20 @@ go run send_file.go README.md
 
 Red Giant Protocol is a **revolutionary high-performance data transmission system** that uses an "exposure-based" architecture instead of traditional send/receive patterns. It achieves **500+ MB/s throughput** with the optimized C core.
 
-## 📁 Project Structure (Clean & Minimal)
+## 📁 Project Structure (Complete P2P System)
 
 ```
 red-giant-protocol/
-├── red_giant_server.go          # Main server (C-core integrated)
+├── red_giant_server.go          # P2P Server with C-core integration
 ├── red_giant.h                  # High-performance C header
 ├── red_giant.c                  # Optimized C implementation
-├── send_file.go                 # File sender utility
+├── red_giant_peer.go            # P2P File sharing client
+├── red_giant_chat.go            # P2P Chat system
+├── red_giant_network.go         # Network discovery & monitoring
+├── send_file.go                 # Simple file sender utility
 ├── client.go                    # Client library & examples
-├── start.sh                     # Quick start script
 ├── docker-compose.production.yml # Production deployment
 ├── Dockerfile.production        # Production container
-├── nginx.conf                   # Load balancer config
 └── README.md                    # This file
 ```
 
@@ -41,44 +42,73 @@ red-giant-protocol/
 ✅ **Zero-Copy Operations**: Minimal memory overhead  
 ✅ **Production Ready**: Graceful shutdown, health checks, metrics  
 
-## 🚀 Usage Examples
+## 🚀 Complete P2P Communication System
 
-### Send Files
+### 📁 File Sharing (Peer-to-Peer)
 ```bash
-# Send a single file
+# Upload files to the network
+go run red_giant_peer.go upload document.pdf
+go run red_giant_peer.go upload *.jpg
+
+# List all files in the network
+go run red_giant_peer.go list
+
+# Download files by ID
+go run red_giant_peer.go download abc123 downloaded_file.pdf
+
+# Search for files
+go run red_giant_peer.go search "*.pdf"
+
+# Share entire folders
+go run red_giant_peer.go share ./my_documents
+```
+
+### 💬 Chat System (Real-time P2P)
+```bash
+# Start chat as Alice
+go run red_giant_chat.go alice
+
+# Start chat as Bob (in another terminal)
+go run red_giant_chat.go bob
+
+# Chat commands:
+# - Type messages and press Enter
+# - /msg <user> <message> - Private message
+# - /history - Show message history
+# - /help - Show all commands
+```
+
+### 🌐 Network Discovery & Monitoring
+```bash
+# Discover all files in the network
+go run red_giant_network.go discover
+
+# Search for specific files
+go run red_giant_network.go discover "*.pdf"
+
+# Get network statistics
+go run red_giant_network.go stats
+
+# Test network performance
+go run red_giant_network.go test
+
+# Monitor network activity
+go run red_giant_network.go monitor 60s
+```
+
+### 🧪 Raw Protocol Testing
+```bash
+# Basic client tests
+go run client.go test
+go run client.go benchmark
+
+# Direct file sending
 go run send_file.go document.pdf
 
-# Send multiple files
-go run send_file.go *.jpg
-
-# Send to different server
-go run send_file.go large_file.zip http://your-server:8080
-```
-
-### Use Client Library
-```bash
-# Basic test
-go run client.go test
-
-# Process a file
-go run client.go file README.md
-
-# Run benchmark
-go run client.go benchmark
-```
-
-### API Usage
-```bash
-# Send data via curl
+# Raw API usage
 curl -X POST http://localhost:8080/process \
      -H "Content-Type: application/octet-stream" \
      --data-binary "@yourfile.dat"
-
-# Check server health
-curl http://localhost:8080/health
-
-# Get performance metrics
-curl http://localhost:8080/metrics
 ```
 
 ## 🐳 Production Deployment

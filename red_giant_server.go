@@ -4,6 +4,7 @@ package main
 /*
 #cgo CFLAGS: -std=c99 -O3 -march=native
 #include "red_giant.h"
+#include "red_giant.c"
 #include <stdlib.h>
 */
 import "C"
@@ -16,8 +17,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -63,13 +66,26 @@ func NewConfig() *Config {
 	return config
 }
 
-// High-performance Red Giant processor with C core
+// File storage for peer-to-peer functionality
+type StoredFile struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Size       int64     `json:"size"`
+	Hash       string    `json:"hash"`
+	PeerID     string    `json:"peer_id"`
+	Data       []byte    `json:"-"`
+	UploadedAt time.Time `json:"uploaded_at"`
+}
+
+// High-performance Red Giant processor with C core and P2P storage
 type RedGiantProcessor struct {
 	config      *Config
 	workerPool  chan struct{}
 	metrics     *Metrics
 	logger      *log.Logger
 	surface     *C.rg_exposure_surface_t
+	fileStorage map[string]*StoredFile
+	storageMu   sync.RWMutex
 }
 
 type Metrics struct {
@@ -127,7 +143,10 @@ func NewRedGiantProcessor(config *Config) *RedGiantProcessor {
 	
 	// Initialize file ID and hash
 	fileID := fmt.Sprintf("rg_server_%d", time.Now().Unix())
-	copy((*[64]C.char)(unsafe.Pointer(&cManifest.file_id[0]))[:], fileID)
+	fileIDBytes := []byte(fileID)
+	for i := 0; i < len(fileIDBytes) && i < 64; i++ {
+		cManifest.file_id[i] = C.char(fileIDBytes[i])
+	}
 	
 	// Create high-performance C surface
 	surface := C.rg_create_surface(&cManifest)
@@ -136,11 +155,12 @@ func NewRedGiantProcessor(config *Config) *RedGiantProcessor {
 	}
 	
 	processor := &RedGiantProcessor{
-		config:     config,
-		workerPool: make(chan struct{}, config.MaxWorkers),
-		metrics:    NewMetrics(),
-		logger:     log.New(os.Stdout, "[RedGiant] ", log.LstdFlags),
-		surface:    surface,
+		config:      config,
+		workerPool:  make(chan struct{}, config.MaxWorkers),
+		metrics:     NewMetrics(),
+		logger:      log.New(os.Stdout, "[RedGiant] ", log.LstdFlags),
+		surface:     surface,
+		fileStorage: make(map[string]*StoredFile),
 	}
 	
 	processor.logger.Printf("🚀 High-performance C core initialized")
@@ -324,26 +344,51 @@ func (rg *RedGiantProcessor) handleRoot(w http.ResponseWriter, r *http.Request) 
         <h2>🔗 API Endpoints</h2>
         
         <div class="endpoint">
+            <strong class="method">POST</strong> /upload
+            <p>Upload file to Red Giant P2P network</p>
+            <pre>go run red_giant_peer.go upload myfile.pdf</pre>
+        </div>
+
+        <div class="endpoint">
+            <strong class="method">GET</strong> /download/{file-id}
+            <p>Download file from Red Giant P2P network</p>
+            <pre>go run red_giant_peer.go download abc123 output.pdf</pre>
+        </div>
+
+        <div class="endpoint">
+            <strong class="method">GET</strong> /files
+            <p>List all available files in the network</p>
+            <pre>go run red_giant_peer.go list</pre>
+        </div>
+
+        <div class="endpoint">
+            <strong class="method">GET</strong> /search?q=pattern
+            <p>Search for files by name pattern</p>
+            <pre>go run red_giant_peer.go search "*.pdf"</pre>
+        </div>
+
+        <div class="endpoint">
             <strong class="method">POST</strong> /process
-            <p>Process data using Red Giant Protocol</p>
+            <p>Process raw data using Red Giant Protocol</p>
             <pre>curl -X POST http://localhost:8080/process \
      -H "Content-Type: application/octet-stream" \
      --data-binary "@yourfile.dat"</pre>
         </div>
 
-        <div class="endpoint">
-            <strong class="method">GET</strong> /metrics
-            <p>Get performance metrics</p>
-            <pre>curl http://localhost:8080/metrics</pre>
-        </div>
+        <h2>🚀 Peer-to-Peer Quick Start</h2>
+        <pre># Upload a file to the network
+go run red_giant_peer.go upload README.md
 
-        <div class="endpoint">
-            <strong class="method">GET</strong> /health
-            <p>Health check endpoint</p>
-            <pre>curl http://localhost:8080/health</pre>
-        </div>
+# List all files in the network
+go run red_giant_peer.go list
 
-        <h2>🚀 Quick Test</h2>
+# Download a file by ID
+go run red_giant_peer.go download {file-id} downloaded_file.md
+
+# Share an entire folder
+go run red_giant_peer.go share ./my_folder</pre>
+
+        <h2>🧪 Raw Protocol Test</h2>
         <pre>echo "Red Giant Protocol Test Data" | curl -X POST http://localhost:8080/process \
      -H "Content-Type: application/octet-stream" \
      --data-binary @-</pre>
@@ -442,4 +487,227 @@ func main() {
 	
 	<-ctx.Done()
 	processor.logger.Println("Red Giant Protocol Server stopped")
+}
+
+// Initialize file storage directory
+func (rg *RedGiantProcessor) initFileStorage() {
+	// Create storage directory if it doesn't exist
+	if err := os.MkdirAll("./storage", 0755); err != nil {
+		rg.logger.Printf("Warning: Could not create storage directory: %v", err)
+	}
+	rg.logger.Printf("📁 File storage initialized")
+}
+
+// Generate file ID from content hash
+func (rg *RedGiantProcessor) generateFileID(data []byte, filename string) string {
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%x", hash[:8]) // Use first 8 bytes of hash
+}
+
+// Handle file upload for P2P sharing
+func (rg *RedGiantProcessor) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get peer info from headers
+	peerID := r.Header.Get("X-Peer-ID")
+	fileName := r.Header.Get("X-File-Name")
+	if peerID == "" || fileName == "" {
+		http.Error(w, "Missing peer ID or file name", http.StatusBadRequest)
+		return
+	}
+
+	// Read file data
+	data := make([]byte, rg.config.BufferSize)
+	n, err := r.Body.Read(data)
+	if err != nil && err.Error() != "EOF" {
+		http.Error(w, "Failed to read file data", http.StatusBadRequest)
+		rg.metrics.RecordError()
+		return
+	}
+	data = data[:n]
+
+	// Process with Red Giant protocol for high-speed handling
+	chunks, duration, err := rg.ProcessData(data)
+	if err != nil {
+		http.Error(w, "Processing failed", http.StatusInternalServerError)
+		rg.metrics.RecordError()
+		return
+	}
+
+	// Generate file ID and store
+	fileID := rg.generateFileID(data, fileName)
+	
+	storedFile := &StoredFile{
+		ID:         fileID,
+		Name:       fileName,
+		Size:       int64(len(data)),
+		Hash:       fileID,
+		PeerID:     peerID,
+		Data:       make([]byte, len(data)),
+		UploadedAt: time.Now(),
+	}
+	copy(storedFile.Data, data)
+
+	// Store in memory and optionally on disk
+	rg.storageMu.Lock()
+	rg.fileStorage[fileID] = storedFile
+	rg.storageMu.Unlock()
+
+	// Save to disk for persistence
+	diskPath := fmt.Sprintf("./storage/%s_%s", fileID, fileName)
+	if err := os.WriteFile(diskPath, data, 0644); err != nil {
+		rg.logger.Printf("Warning: Could not save file to disk: %v", err)
+	}
+
+	// Record metrics
+	rg.metrics.RecordRequest(int64(len(data)), int64(chunks), duration)
+	throughput := float64(len(data)) / duration.Seconds() / (1024 * 1024)
+
+	// Send response
+	response := map[string]interface{}{
+		"status":           "success",
+		"file_id":          fileID,
+		"bytes_processed":  len(data),
+		"chunks_processed": chunks,
+		"processing_time_ms": duration.Milliseconds(),
+		"throughput_mbps":  throughput,
+		"message":          fmt.Sprintf("File '%s' uploaded successfully", fileName),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+
+	rg.logger.Printf("📤 File uploaded: %s (%d bytes) by peer %s", fileName, len(data), peerID)
+}
+
+// Handle file download for P2P sharing
+func (rg *RedGiantProcessor) handleDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract file ID from URL path
+	fileID := strings.TrimPrefix(r.URL.Path, "/download/")
+	if fileID == "" {
+		http.Error(w, "File ID required", http.StatusBadRequest)
+		return
+	}
+
+	// Get peer ID
+	peerID := r.Header.Get("X-Peer-ID")
+
+	// Find file in storage
+	rg.storageMu.RLock()
+	storedFile, exists := rg.fileStorage[fileID]
+	rg.storageMu.RUnlock()
+
+	if !exists {
+		// Try loading from disk
+		matches, _ := filepath.Glob(fmt.Sprintf("./storage/%s_*", fileID))
+		if len(matches) == 0 {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+
+		// Load from disk
+		diskData, err := os.ReadFile(matches[0])
+		if err != nil {
+			http.Error(w, "Failed to read file", http.StatusInternalServerError)
+			return
+		}
+
+		// Create temporary stored file
+		fileName := filepath.Base(matches[0])
+		storedFile = &StoredFile{
+			ID:   fileID,
+			Name: fileName,
+			Size: int64(len(diskData)),
+			Data: diskData,
+		}
+	}
+
+	// Set headers
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", storedFile.Name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", storedFile.Size))
+
+	// Send file data
+	start := time.Now()
+	bytesWritten, err := w.Write(storedFile.Data)
+	if err != nil {
+		rg.logger.Printf("Error sending file: %v", err)
+		return
+	}
+
+	duration := time.Since(start)
+	throughput := float64(bytesWritten) / duration.Seconds() / (1024 * 1024)
+
+	rg.logger.Printf("📥 File downloaded: %s (%d bytes) by peer %s (%.2f MB/s)", 
+		storedFile.Name, bytesWritten, peerID, throughput)
+}
+
+// Handle file listing for P2P discovery
+func (rg *RedGiantProcessor) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rg.storageMu.RLock()
+	files := make([]StoredFile, 0, len(rg.fileStorage))
+	for _, file := range rg.fileStorage {
+		// Don't include the actual data in the list
+		fileCopy := *file
+		fileCopy.Data = nil
+		files = append(files, fileCopy)
+	}
+	rg.storageMu.RUnlock()
+
+	response := map[string]interface{}{
+		"files": files,
+		"count": len(files),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Handle file search for P2P discovery
+func (rg *RedGiantProcessor) handleSearchFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "Search query required", http.StatusBadRequest)
+		return
+	}
+
+	rg.storageMu.RLock()
+	var matchedFiles []StoredFile
+	for _, file := range rg.fileStorage {
+		// Simple pattern matching
+		if strings.Contains(strings.ToLower(file.Name), strings.ToLower(query)) ||
+		   strings.Contains(strings.ToLower(query), "*") {
+			fileCopy := *file
+			fileCopy.Data = nil
+			matchedFiles = append(matchedFiles, fileCopy)
+		}
+	}
+	rg.storageMu.RUnlock()
+
+	response := map[string]interface{}{
+		"files": matchedFiles,
+		"count": len(matchedFiles),
+		"query": query,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
