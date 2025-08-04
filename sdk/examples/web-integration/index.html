@@ -1,0 +1,287 @@
+<!DOCTYStatus('
+uploadStatus', `Failed to list files: ${error.message}`, 'error');
+            }
+        }
+
+        async function downloadFile(fileId, fileName) {
+            if (!redGiantClient) return;
+
+            try {
+                const data = await redGiantClient.downloadData(fileId);
+                
+                // Create download link
+                const blob = new Blob([data]);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showStatus('uploadStatus', `✅ Downloaded ${fileName}`, 'success');
+            } catch (error) {
+                showStatus('uploadStatus', `Download failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Chat Functions
+        function joinChat() {
+            const username = document.getElementById('chatUsername').value;
+            const roomId = document.getElementById('chatRoom').value;
+            
+            if (!username || !roomId) {
+                alert('Please enter username and room name');
+                return;
+            }
+
+            if (!redGiantClient) {
+                alert('Not connected to server');
+                return;
+            }
+
+            chatRoom = redGiantClient.createChatRoom(roomId, username, {
+                onMessage: displayChatMessage,
+                pollInterval: 2000
+            });
+
+            chatRoom.join();
+            document.getElementById('chatContainer').style.display = 'block';
+            
+            displayChatMessage({
+                from: 'system',
+                content: `Joined room "${roomId}" as ${username}`,
+                timestamp: new Date().toISOString(),
+                type: 'system'
+            });
+        }
+
+        function leaveChat() {
+            if (chatRoom) {
+                chatRoom.leave();
+                chatRoom = null;
+                document.getElementById('chatContainer').style.display = 'none';
+                document.getElementById('chatMessages').innerHTML = '';
+            }
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (!message || !chatRoom) return;
+
+            chatRoom.sendMessage(message);
+            messageInput.value = '';
+            
+            // Display own message immediately
+            displayChatMessage({
+                from: document.getElementById('chatUsername').value,
+                content: message,
+                timestamp: new Date().toISOString(),
+                type: 'public',
+                own: true
+            });
+        }
+
+        function handleChatKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function displayChatMessage(message) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${message.own ? 'own' : 'other'}`;
+            
+            const time = new Date(message.timestamp).toLocaleTimeString();
+            const sender = message.type === 'system' ? '🔔' : message.from;
+            
+            messageEl.innerHTML = `
+                <div>${message.content}</div>
+                <div class="message-meta">${sender} • ${time}</div>
+            `;
+            
+            messagesContainer.appendChild(messageEl);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // IoT Streaming Functions
+        function startIoTStreaming() {
+            const deviceId = document.getElementById('deviceId').value;
+            const sensorType = document.getElementById('sensorType').value;
+            const interval = parseInt(document.getElementById('streamInterval').value);
+            
+            if (!redGiantClient) {
+                showStatus('iotStatus', 'Not connected to server', 'error');
+                return;
+            }
+
+            iotDevice = redGiantClient.createIoTDevice(deviceId, {
+                sensors: [sensorType],
+                batchSize: 5,
+                interval: interval,
+                onReading: (reading) => {
+                    // Update UI with latest reading
+                    updateIoTStats(reading);
+                },
+                onBatch: (batch, count) => {
+                    showStatus('iotStatus', 
+                        `📡 Batch ${count} uploaded: ${batch.count} readings`, 'success');
+                }
+            });
+
+            iotDevice.startStreaming();
+            showStatus('iotStatus', `🚀 Started streaming ${sensorType} data from ${deviceId}`, 'info');
+        }
+
+        function stopIoTStreaming() {
+            if (iotDevice) {
+                iotDevice.stopStreaming();
+                iotDevice = null;
+                showStatus('iotStatus', '⏹️ Streaming stopped', 'info');
+                document.getElementById('iotStats').innerHTML = '';
+            }
+        }
+
+        function updateIoTStats(reading) {
+            const statsEl = document.getElementById('iotStats');
+            statsEl.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">${reading.value.toFixed(2)}</div>
+                        <div class="stat-label">${reading.sensor_type} (${reading.unit})</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${reading.metadata.battery_level.toFixed(1)}%</div>
+                        <div class="stat-label">Battery</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${reading.metadata.signal_strength.toFixed(0)}</div>
+                        <div class="stat-label">Signal (dBm)</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // AI Token Streaming Functions
+        function startAIStreaming() {
+            const model = document.getElementById('aiModel').value;
+            const prompt = document.getElementById('aiPrompt').value;
+            const tokensPerSec = parseInt(document.getElementById('tokensPerSecond').value);
+            
+            if (!prompt.trim()) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            if (!redGiantClient) {
+                showStatus('aiStats', 'Not connected to server', 'error');
+                return;
+            }
+
+            const sessionId = `web_session_${Date.now()}`;
+            const responseEl = document.getElementById('aiResponse');
+            responseEl.style.display = 'block';
+            responseEl.innerHTML = '<div style="color: #667eea;">🤖 Generating response...</div>';
+            
+            aiTokenStream = redGiantClient.createTokenStream(sessionId, {
+                modelName: model,
+                onToken: (token, result) => {
+                    // Append token to response
+                    const currentText = responseEl.textContent || '';
+                    responseEl.textContent = currentText + token.token + ' ';
+                    
+                    // Update stats
+                    showStatus('aiStats', 
+                        `Token ${token.position + 1} streamed (${result.throughput_mbps.toFixed(2)} MB/s)`, 'info');
+                },
+                onComplete: (session) => {
+                    showStatus('aiStats', 
+                        `✅ Response complete! ${session.totalTokens} tokens streamed`, 'success');
+                    aiStreamingActive = false;
+                }
+            });
+
+            // Simulate AI response
+            const simulatedResponse = generateSimulatedResponse(prompt);
+            aiStreamingActive = true;
+            
+            aiTokenStream.streamResponse(simulatedResponse, tokensPerSec)
+                .catch(error => {
+                    showStatus('aiStats', `Streaming failed: ${error.message}`, 'error');
+                    aiStreamingActive = false;
+                });
+        }
+
+        function stopAIStreaming() {
+            aiStreamingActive = false;
+            if (aiTokenStream) {
+                showStatus('aiStats', '⏹️ AI streaming stopped', 'info');
+            }
+        }
+
+        function generateSimulatedResponse(prompt) {
+            const responses = {
+                'quantum': 'Quantum computing harnesses the principles of quantum mechanics to process information in fundamentally different ways than classical computers. Instead of using bits that are either 0 or 1, quantum computers use quantum bits or qubits that can exist in superposition, meaning they can be both 0 and 1 simultaneously. This allows quantum computers to perform certain calculations exponentially faster than classical computers.',
+                'machine learning': 'Machine learning is a subset of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed. It uses algorithms to analyze data, identify patterns, and make predictions or decisions. Common types include supervised learning, unsupervised learning, and reinforcement learning.',
+                'blockchain': 'Blockchain is a distributed ledger technology that maintains a continuously growing list of records, called blocks, which are linked and secured using cryptography. Each block contains a cryptographic hash of the previous block, a timestamp, and transaction data, making it resistant to modification and providing transparency.',
+                'default': 'This is a simulated AI response demonstrating Red Giant Protocol\'s high-speed token streaming capabilities. The system can handle real-time AI model outputs with exceptional performance, delivering tokens at rates exceeding 500 MB/s through the optimized C core architecture.'
+            };
+
+            const key = Object.keys(responses).find(k => prompt.toLowerCase().includes(k)) || 'default';
+            return responses[key];
+        }
+
+        // Network Statistics Functions
+        async function refreshStats() {
+            if (!redGiantClient) return;
+
+            try {
+                const stats = await redGiantClient.getNetworkStats();
+                
+                document.getElementById('statThroughput').textContent = stats.throughput_mbps.toFixed(2);
+                document.getElementById('statLatency').textContent = stats.average_latency_ms;
+                document.getElementById('statRequests').textContent = stats.total_requests.toLocaleString();
+                document.getElementById('statUptime').textContent = stats.uptime_seconds.toLocaleString();
+                
+            } catch (error) {
+                console.error('Failed to refresh stats:', error);
+            }
+        }
+
+        function toggleAutoRefresh() {
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+                showStatus('connectionInfo', 'Auto-refresh disabled', 'info');
+            } else {
+                statsInterval = setInterval(refreshStats, 5000);
+                showStatus('connectionInfo', 'Auto-refresh enabled (5s)', 'info');
+            }
+        }
+
+        // Utility Functions
+        function showStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+            
+            // Auto-clear success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    element.innerHTML = '';
+                }, 5000);
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (chatRoom) chatRoom.leave();
+            if (iotDevice) iotDevice.stopStreaming();
+            if (statsInterval) clearInterval(statsInterval);
+        });
+    </script>
+</body>
+</html>

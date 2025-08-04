@@ -104,6 +104,21 @@ deploy_digitalocean() {
     print_success "DigitalOcean deployment completed!"
 }
 
+deploy_linode() {
+    print_info "Deploying to Linode..."
+    check_dependencies "linode-cli" "docker"
+    
+    # Check Linode authentication
+    if ! linode-cli regions list &> /dev/null; then
+        print_error "Linode CLI not configured. Run 'linode-cli configure' first."
+        exit 1
+    fi
+    
+    cd deploy/linode
+    ./deploy-linode.sh
+    print_success "Linode deployment completed!"
+}
+
 deploy_kubernetes() {
     print_info "Deploying to Kubernetes..."
     check_dependencies "kubectl" "docker"
@@ -173,6 +188,7 @@ show_usage() {
     echo "  gcp           - Google Cloud Platform (GKE/Cloud Run)"
     echo "  azure         - Microsoft Azure (AKS/Container Instances)"
     echo "  digitalocean  - DigitalOcean (Kubernetes/Droplets)"
+    echo "  linode        - Linode (LKE/Instances)"
     echo "  kubernetes    - Any Kubernetes cluster"
     echo "  docker        - Local Docker deployment"
     echo "  heroku        - Heroku platform"
@@ -181,6 +197,7 @@ show_usage() {
     echo ""
     echo "Examples:"
     echo "  $0 aws"
+    echo "  $0 linode"
     echo "  $0 docker"
     echo "  $0 kubernetes"
 }
@@ -207,6 +224,9 @@ main() {
             ;;
         "digitalocean"|"do")
             deploy_digitalocean
+            ;;
+        "linode")
+            deploy_linode
             ;;
         "kubernetes"|"k8s")
             deploy_kubernetes
