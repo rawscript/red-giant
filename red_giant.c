@@ -3,7 +3,6 @@
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
 
-#include "red_giant.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -20,6 +19,8 @@
 #elif defined(__APPLE__)
     #include <mach/mach_time.h>
 #endif
+
+#include "red_giant.h"
 
 #ifdef _WIN32
 #include <windows.h>
