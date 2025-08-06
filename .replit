@@ -41,3 +41,12 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "./deploy_unified.sh telemedicine --host 0.0.0.0 --port 8443"
+
+[[workflows.workflow]]
+name = "Red Giant Mobile"
+author = 39839441
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./deploy_unified.sh mobile --host 0.0.0.0 --port 9090"
