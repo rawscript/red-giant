@@ -1,19 +1,27 @@
 // Red Giant Protocol - High-Performance C Core Implementation
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#define _POSIX_C_SOURCE 199309L
+#endif
+#ifndef _POSIX_C_SOURCE  
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "red_giant.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <time.h>
 #include <stdint.h>
 #include <stdatomic.h>
 #include <errno.h>
 #include <unistd.h>
 
-// Platform-specific includes
+// Platform-specific includes with proper feature detection
 #ifdef __linux__
     #include <time.h>
+    #include <sys/time.h>
+    #include <malloc.h>
+#elif defined(__APPLE__)
+    #include <mach/mach_time.h>
     #include <sys/time.h>
 #endif
 
@@ -48,15 +56,58 @@ uint64_t get_timestamp_ns(void) {
 #endif
 }
 
-// Safe aligned allocation with fallback
+// Memory pool for zero-allocation chunk processing
+static struct {
+    void* pool;
+    size_t pool_size;
+    size_t pool_offset;
+    bool initialized;
+} memory_pool = {0};
+
+// Initialize memory pool once
+static bool init_memory_pool(size_t size) {
+    if (memory_pool.initialized) return true;
+    
+    memory_pool.pool = malloc(size);
+    if (!memory_pool.pool) return false;
+    
+    memory_pool.pool_size = size;
+    memory_pool.pool_offset = 0;
+    memory_pool.initialized = true;
+    return true;
+}
+
+// Pool-based allocation - eliminates malloc/free overhead
+static void* pool_alloc(size_t size) {
+    if (!memory_pool.initialized) {
+        init_memory_pool(256 * 1024 * 1024); // 256MB pool
+    }
+    
+    // Align to cache line
+    size = (size + 63) & ~63;
+    
+    if (memory_pool.pool_offset + size <= memory_pool.pool_size) {
+        void* ptr = (char*)memory_pool.pool + memory_pool.pool_offset;
+        memory_pool.pool_offset += size;
+        return ptr;
+    }
+    
+    // Pool exhausted, reset (simple strategy)
+    memory_pool.pool_offset = 0;
+    return pool_alloc(size);
+}
+
+// Safe aligned allocation with pool optimization
 static void* safe_aligned_alloc(size_t alignment, size_t size) {
     if (size == 0) return NULL;
-
-    void* ptr = aligned_alloc(alignment, size);
-    if (!ptr && alignment > sizeof(void*)) {
-        // Fallback to regular malloc if aligned_alloc fails
-        ptr = malloc(size);
+    
+    // Use pool for small allocations
+    if (size <= 1024 * 1024) { // 1MB threshold
+        return pool_alloc(size);
     }
+    
+    // Large allocations use system allocator
+    void* ptr = malloc(size); // Remove aligned_alloc for compatibility
     return ptr;
 }
 
