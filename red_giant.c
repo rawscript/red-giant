@@ -1,8 +1,7 @@
 // Red Giant Protocol - High-Performance C Core Implementation
-#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#endif
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 #include "red_giant.h"
 #include <stdlib.h>
@@ -15,12 +14,9 @@
 #include <time.h>
 #include <sys/time.h>
 
-// Additional POSIX headers for time functions
+// Platform-specific includes
 #ifdef __linux__
     #include <malloc.h>
-    #ifndef _GNU_SOURCE
-        #define _GNU_SOURCE
-    #endif
 #elif defined(__APPLE__)
     #include <mach/mach_time.h>
 #endif
