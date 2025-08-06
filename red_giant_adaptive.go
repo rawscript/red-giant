@@ -2,10 +2,12 @@
 package main
 
 /*
-#cgo CFLAGS: -std=c99 -O3 -march=native
+#cgo CFLAGS: -std=gnu99 -O3 -march=native -D_GNU_SOURCE
 #include "red_giant.h"
 #include "red_giant.c"
+#include "red_giant_reliable.c"
 #include <stdlib.h>
+#include <time.h>
 */
 import "C"
 import (

@@ -1,4 +1,5 @@
 // Red Giant Protocol - High-Performance C Core Implementation
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 199309L
 #include "red_giant.h"
 #include <stdlib.h>
@@ -8,10 +9,12 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include <errno.h>
+#include <unistd.h>
 
-// Fix compilation on different systems
+// Platform-specific includes
 #ifdef __linux__
-    #define _POSIX_C_SOURCE 199309L
+    #include <time.h>
+    #include <sys/time.h>
 #endif
 
 #ifdef _WIN32
