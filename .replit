@@ -4,7 +4,7 @@ modules = ["go-1.21", "bash", "python-3.12", "web", "c-clang14"]
 channel = "stable-25_05"
 
 [workflows]
-runButton = "Red Giant Adaptive"
+runButton = "Red Giant Comprehensive Test"
 
 [[workflows.workflow]]
 name = "Red Giant Test Server"
@@ -50,3 +50,12 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "./deploy_unified.sh mobile --host 0.0.0.0 --port 9090"
+
+[[workflows.workflow]]
+name = "Red Giant Comprehensive Test"
+author = 39839441
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go run test_all.go"

@@ -1,10 +1,6 @@
 // Red Giant Protocol - High-Performance C Core Implementation
-#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#endif
-#ifndef _POSIX_C_SOURCE  
 #define _POSIX_C_SOURCE 200809L
-#endif
 
 #include "red_giant.h"
 #include <stdlib.h>
@@ -14,15 +10,14 @@
 #include <stdatomic.h>
 #include <errno.h>
 #include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
 
 // Platform-specific includes with proper feature detection
 #ifdef __linux__
-    #include <time.h>
-    #include <sys/time.h>
     #include <malloc.h>
 #elif defined(__APPLE__)
     #include <mach/mach_time.h>
-    #include <sys/time.h>
 #endif
 
 #ifdef _WIN32
@@ -106,8 +101,17 @@ static void* safe_aligned_alloc(size_t alignment, size_t size) {
         return pool_alloc(size);
     }
     
-    // Large allocations use system allocator
-    void* ptr = malloc(size); // Remove aligned_alloc for compatibility
+    // Large allocations use system allocator with proper alignment
+    void* ptr = NULL;
+    #if defined(_WIN32)
+        ptr = _aligned_malloc(size, alignment);
+    #elif defined(__APPLE__) || defined(__linux__)
+        if (posix_memalign(&ptr, alignment, size) != 0) {
+            ptr = malloc(size); // Fallback to regular malloc
+        }
+    #else
+        ptr = malloc(size); // Fallback for other systems
+    #endif
     return ptr;
 }
 

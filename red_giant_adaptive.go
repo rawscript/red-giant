@@ -13,16 +13,23 @@ import "C"
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 )
@@ -480,7 +487,7 @@ func (ap *AdaptiveProcessor) handleAdaptiveUpload(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 
-	ap.logger.Printf("📤 Adaptive upload: %s (%d bytes, %s, %.2f MB/s) by %s", 
+	ap.logger.Printf("📤 Adaptive upload: %s (%d bytes, %s, %.2f MB/s) by %s",
 		fileName, len(data), analyzer.ContentType, throughput, peerID)
 }
 
@@ -634,7 +641,7 @@ go run red_giant_peer.go upload document.txt</pre>
 
 	// Start server
 	processor.logger.Printf("🚀 Red Giant Adaptive Protocol Server starting on %s:%d", config.Host, config.Port)
-	processor.logger.Printf("📊 Configuration: Workers=%d, Adaptive=ON, Compression=%v", 
+	processor.logger.Printf("📊 Configuration: Workers=%d, Adaptive=ON, Compression=%v",
 		config.MaxWorkers, config.EnableCompression)
 	processor.logger.Printf("🎯 Supports: JSON, XML, Images, Video, Audio, Binary, Streaming")
 	processor.logger.Printf("🌐 Web interface: http://localhost:%d", config.Port)
