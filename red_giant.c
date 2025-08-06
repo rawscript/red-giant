@@ -1,5 +1,7 @@
 // Red Giant Protocol - High-Performance C Core Implementation
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #define _POSIX_C_SOURCE 200809L
 
 #include "red_giant.h"
