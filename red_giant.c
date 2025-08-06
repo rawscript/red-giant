@@ -13,9 +13,12 @@
 #include <time.h>
 #include <sys/time.h>
 
-// Platform-specific includes with proper feature detection
+// Additional POSIX headers for time functions
 #ifdef __linux__
     #include <malloc.h>
+    #ifndef _GNU_SOURCE
+        #define _GNU_SOURCE
+    #endif
 #elif defined(__APPLE__)
     #include <mach/mach_time.h>
 #endif
@@ -29,6 +32,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 #define aligned_free(ptr) free(ptr)
+// Ensure posix_memalign is declared
+#ifndef _GNU_SOURCE
+extern int posix_memalign(void **memptr, size_t alignment, size_t size);
+#endif
 // Fallback for systems without aligned_alloc
 #ifndef aligned_alloc
 #define aligned_alloc(alignment, size) malloc(size)
