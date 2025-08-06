@@ -95,12 +95,12 @@ func NewMobileRedGiantAdapter(serverAddr string, localPort int) *MobileRedGiantA
 	return adapter
 }
 
-// Create optimized profiles for different network types
+// Create optimized profiles for different network types - REALISTIC PERFORMANCE
 func createMobileProfiles() map[NetworkType]*MobileProfile {
 	return map[NetworkType]*MobileProfile{
 		NetworkGSM: {
 			NetworkType:     NetworkGSM,
-			MaxBandwidth:    9600,        // 9.6 Kbps
+			MaxBandwidth:    9600,        // 9.6 Kbps - Legacy only
 			Latency:         500,         // 500ms
 			ChunkSize:       1024,        // 1KB chunks
 			CompressionRate: 0.8,         // Aggressive compression
@@ -109,47 +109,47 @@ func createMobileProfiles() map[NetworkType]*MobileProfile {
 		},
 		Network2G: {
 			NetworkType:     Network2G,
-			MaxBandwidth:    114000,      // 114 Kbps (EDGE)
-			Latency:         300,
-			ChunkSize:       4096,        // 4KB chunks
+			MaxBandwidth:    384000,      // 384 Kbps (EDGE max)
+			Latency:         200,
+			ChunkSize:       8192,        // 8KB chunks
 			CompressionRate: 0.7,
 			RetryAttempts:   3,
 			PowerOptimized:  true,
 		},
 		Network3G: {
 			NetworkType:     Network3G,
-			MaxBandwidth:    2000000,     // 2 Mbps
-			Latency:         150,
-			ChunkSize:       32768,       // 32KB chunks
-			CompressionRate: 0.6,
-			RetryAttempts:   3,
+			MaxBandwidth:    42000000,    // 42 Mbps (HSPA+ real-world)
+			Latency:         80,
+			ChunkSize:       131072,      // 128KB chunks
+			CompressionRate: 0.5,
+			RetryAttempts:   2,
 			PowerOptimized:  false,
 		},
 		Network4G: {
 			NetworkType:     Network4G,
-			MaxBandwidth:    50000000,    // 50 Mbps
-			Latency:         50,
-			ChunkSize:       262144,      // 256KB chunks
-			CompressionRate: 0.4,
+			MaxBandwidth:    300000000,   // 300 Mbps (LTE-A real-world)
+			Latency:         30,          // Modern LTE latency
+			ChunkSize:       1048576,     // 1MB chunks - SAME AS DESKTOP
+			CompressionRate: 0.3,
 			RetryAttempts:   2,
 			PowerOptimized:  false,
 		},
 		Network5G: {
 			NetworkType:     Network5G,
-			MaxBandwidth:    1000000000,  // 1 Gbps
-			Latency:         10,
-			ChunkSize:       1048576,     // 1MB chunks
-			CompressionRate: 0.2,
-			RetryAttempts:   2,
+			MaxBandwidth:    10000000000, // 10 Gbps (5G real peak)
+			Latency:         5,           // 5ms ultra-low latency
+			ChunkSize:       4194304,     // 4MB chunks - FASTER THAN DESKTOP
+			CompressionRate: 0.1,         // Minimal compression needed
+			RetryAttempts:   1,
 			PowerOptimized:  false,
 		},
 		NetworkWiFi: {
 			NetworkType:     NetworkWiFi,
-			MaxBandwidth:    100000000,   // 100 Mbps
-			Latency:         20,
-			ChunkSize:       524288,      // 512KB chunks
-			CompressionRate: 0.3,
-			RetryAttempts:   2,
+			MaxBandwidth:    1000000000,  // 1 Gbps (WiFi 6 on mobile)
+			Latency:         10,
+			ChunkSize:       2097152,     // 2MB chunks
+			CompressionRate: 0.2,
+			RetryAttempts:   1,
 			PowerOptimized:  false,
 		},
 	}
