@@ -15,6 +15,12 @@
 #include <time.h>
 #include <sys/time.h>
 
+// Ensure POSIX time functions are available
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 199309L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L
+#endif
+
 // Platform-specific includes
 #ifdef __linux__
     #include <malloc.h>
@@ -31,9 +37,19 @@
 #include <sys/time.h>
 #include <unistd.h>
 #define aligned_free(ptr) free(ptr)
-// Ensure posix_memalign is declared
+// Ensure POSIX functions are declared
 #ifndef _GNU_SOURCE
 extern int posix_memalign(void **memptr, size_t alignment, size_t size);
+#endif
+
+// Ensure clock_gettime is available
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
+
+// Declare clock_gettime if not available
+#ifndef _POSIX_TIMERS
+extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 #endif
 // Fallback for systems without aligned_alloc
 #ifndef aligned_alloc
