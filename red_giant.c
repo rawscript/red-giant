@@ -1,5 +1,6 @@
 
 // Red Giant Protocol - High-Performance C Core Implementation
+#define _POSIX_C_SOURCE 199309L
 #include "red_giant.h"
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 #define aligned_free(ptr) free(ptr)
+// Fallback for systems without aligned_alloc
+#ifndef aligned_alloc
+#define aligned_alloc(alignment, size) malloc(size)
+#endif
 #endif
 
 // High-resolution timer with error handling

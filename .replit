@@ -4,7 +4,7 @@ modules = ["go-1.21", "bash", "python-3.12", "web", "c-clang14"]
 channel = "stable-25_05"
 
 [workflows]
-runButton = "Red Giant Test Server"
+runButton = "Red Giant Adaptive"
 
 [[workflows.workflow]]
 name = "Red Giant Test Server"
@@ -14,3 +14,30 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "go run red_giant_test_server.go"
+
+[[workflows.workflow]]
+name = "Red Giant Adaptive"
+author = 39839441
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./deploy_unified.sh adaptive --host 0.0.0.0 --port 8080"
+
+[[workflows.workflow]]
+name = "Red Giant P2P Client"
+author = 39839441
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./deploy_unified.sh peer"
+
+[[workflows.workflow]]
+name = "Red Giant Medical"
+author = 39839441
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./deploy_unified.sh telemedicine --host 0.0.0.0 --port 8443"
