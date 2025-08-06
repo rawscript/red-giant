@@ -2,3 +2,15 @@ modules = ["go-1.21", "bash", "python-3.12", "web", "c-clang14"]
 
 [nix]
 channel = "stable-25_05"
+
+[workflows]
+runButton = "Red Giant Test Server"
+
+[[workflows.workflow]]
+name = "Red Giant Test Server"
+author = 39839441
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go run red_giant_test_server.go"
