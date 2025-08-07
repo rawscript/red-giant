@@ -9,11 +9,12 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/time.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <time.h>
-#include <unistd.h>
+#include <stdlib.h>
+
 
 // Explicit POSIX time declarations for compatibility
 #ifndef CLOCK_MONOTONIC
@@ -109,8 +110,8 @@ static void *pool_alloc(size_t size) {
   }
 
   // Pool exhausted, reset (simple strategy)
-  memory_pool.pool_offset = 0;
-  return pool_alloc(size);
+  fprintf(stderr, "[ERROR] Memory pool exhausted, allocation failed\n");
+  return NULL;
 }
 
 // Safe aligned allocation with pool optimization
@@ -126,11 +127,28 @@ static void *safe_aligned_alloc(size_t alignment, size_t size) {
   // Large allocations use system allocator with proper alignment
   void *ptr = NULL;
 #if defined(_WIN32)
+  // Ensure size is a multiple of alignment on Windows
+  size = (size + alignment - 1) & ~(alignment - 1);
   ptr = _aligned_malloc(size, alignment);
 #elif defined(__APPLE__) || defined(__linux__)
-  if (posix_memalign(&ptr, alignment, size) != 0) {
-    ptr = malloc(size); // Fallback to regular malloc
-  }
+  int attempts = 3;
+    int result = ENOMEM; // Initialize with an error code
+    while (attempts > 0 && result == ENOMEM) {
+        result = posix_memalign(&ptr, alignment, size);
+        if (result == ENOMEM) {
+            // Optionally add a small delay before retrying
+            // struct timespec ts;
+            // ts.tv_sec = 0;
+            // ts.tv_nsec = 1000000; // 1ms
+            // nanosleep(&ts, NULL);
+            attempts--;
+        }
+    }
+
+    if (result != 0) {
+        fprintf(stderr, "[ERROR] posix_memalign failed after multiple attempts: %s\n", strerror(result));
+        return NULL;
+    }
 #else
   ptr = malloc(size); // Fallback for other systems
 #endif

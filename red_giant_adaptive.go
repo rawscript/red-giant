@@ -4,10 +4,8 @@ package main
 /*
 #cgo CFLAGS: -std=gnu99 -O3 -march=native -D_GNU_SOURCE
 #include "red_giant.h"
-#include "red_giant.c"
-#include "red_giant_reliable.c"
-#include <stdlib.h>
-#include <time.h>
+#include "red_giant_wrapper.c"
+#cgo LDFLAGS: -lm
 */
 import "C"
 import (
@@ -401,6 +399,7 @@ func (ap *AdaptiveProcessor) handleAdaptiveUpload(w http.ResponseWriter, r *http
 	// Read data with size limit
 	data, err := io.ReadAll(io.LimitReader(r.Body, int64(ap.config.BufferSize)))
 	if err != nil {
+		ap.logger.Printf("Error reading data: %v", err) // Log the error
 		http.Error(w, "Failed to read data", http.StatusBadRequest)
 		ap.metrics.RecordRequest(0, 0, 0, ModeRaw)
 		return
@@ -426,6 +425,7 @@ func (ap *AdaptiveProcessor) handleAdaptiveUpload(w http.ResponseWriter, r *http
 	// Process with adaptive Red Giant protocol
 	chunks, duration, err := ap.ProcessDataAdaptive(data, analyzer)
 	if err != nil {
+		ap.logger.Printf("Processing failed: %v", err) // Log the error
 		http.Error(w, "Processing failed", http.StatusInternalServerError)
 		ap.metrics.RecordRequest(0, 0, 0, analyzer.ProcessMode)
 		return

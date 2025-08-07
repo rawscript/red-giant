@@ -1,1 +1,3 @@
 .vscode/*
+.ccls-cache/*
+.config/*

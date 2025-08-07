@@ -1,4 +1,3 @@
-
 // Red Giant Protocol - High-Performance C Core Header
 #ifndef RED_GIANT_H
 #define RED_GIANT_H
@@ -118,4 +117,5 @@ void rg_free_aligned(void* ptr);
 }
 #endif
 
+#endif // RED_GIANT_H
 #endif // RED_GIANT_H

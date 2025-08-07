@@ -1,4 +1,3 @@
-
 // Red Giant Protocol - Reliable Exposure System
 // Maintains exposure-based architecture with robust error handling
 #define _GNU_SOURCE
@@ -50,95 +49,96 @@ rg_reliable_surface_t* rg_create_reliable_surface(const rg_manifest_t* manifest)
         return NULL;
     }
 
-    reliable->max_retries = 3;
-    reliable->retry_interval_ns = 1000000; // 1ms
+    reliable->max_retries = 3;    reliable->max_retries = 3;
+    reliable->retry_interval_ns = 1000000; // 1mss = 1000000; // 1ms
     atomic_store(&reliable->failed_chunks, 0);
-    atomic_store(&reliable->retry_operations, 0);
+    atomic_store(&reliable->retry_operations, 0);0);
 
-    return reliable;
+    return reliable;    return reliable;
 }
 
-// Reliable chunk exposure with automatic integrity checking
-bool rg_expose_chunk_reliable(rg_reliable_surface_t* reliable, uint32_t chunk_id, 
+// Reliable chunk exposure with automatic integrity checking// Reliable chunk exposure with automatic integrity checking
+bool rg_expose_chunk_reliable(rg_reliable_surface_t* reliable, uint32_t chunk_id, e, uint32_t chunk_id, 
                             const void* data, uint32_t size) {
-    if (!reliable || !data || chunk_id >= reliable->surface->manifest.total_chunks) {
+    if (!reliable || !data || chunk_id >= reliable->surface->manifest.total_chunks) {anifest.total_chunks) {
         return false;
     }
 
-    rg_chunk_reliability_t* rel_data = &reliable->reliability_data[chunk_id];
+    rg_chunk_reliability_t* rel_data = &reliable->reliability_data[chunk_id];    rg_chunk_reliability_t* rel_data = &reliable->reliability_data[chunk_id];
     
-    // Calculate integrity hash for verification
+    // Calculate integrity hash for verification// Calculate integrity hash for verification
     uint32_t hash = 0;
-    const uint8_t* bytes = (const uint8_t*)data;
+    const uint8_t* bytes = (const uint8_t*)data;es = (const uint8_t*)data;
     for (uint32_t i = 0; i < size; i++) {
         hash = hash * 31 + bytes[i];
     }
-    memcpy(rel_data->integrity_hash, &hash, sizeof(hash));
+    memcpy(rel_data->integrity_hash, &hash, sizeof(hash));emcpy(rel_data->integrity_hash, &hash, sizeof(hash));
 
-    // Attempt exposure with retry logic
-    for (uint32_t attempt = 0; attempt <= reliable->max_retries; attempt++) {
+    // Attempt exposure with retry logic    // Attempt exposure with retry logic
+    for (uint32_t attempt = 0; attempt <= reliable->max_retries; attempt++) {= reliable->max_retries; attempt++) {
         if (rg_expose_chunk_fast(reliable->surface, chunk_id, data, size)) {
             rel_data->retry_count = attempt;
-            atomic_store(&rel_data->needs_retry, false);
+            atomic_store(&rel_data->needs_retry, false);try, false);
             return true;
         }
         
-        // Retry with exponential backoff
-        if (attempt < reliable->max_retries) {
-            atomic_fetch_add(&reliable->retry_operations, 1);
+        // Retry with exponential backoff// Retry with exponential backoff
+        if (attempt < reliable->max_retries) {es) {
+            atomic_fetch_add(&reliable->retry_operations, 1);operations, 1);
             rel_data->last_attempt = get_timestamp_ns();
             
-            // Brief sleep to avoid overwhelming the system
-            struct timespec delay = {0, reliable->retry_interval_ns * (1 << attempt)};
+            // Brief sleep to avoid overwhelming the system// Brief sleep to avoid overwhelming the system
+            struct timespec delay = {0, reliable->retry_interval_ns * (1 << attempt)};erval_ns * (1 << attempt)};
             nanosleep(&delay, NULL);
         }
     }
 
-    // Mark as failed for later recovery
-    atomic_store(&rel_data->needs_retry, true);
-    atomic_fetch_add(&reliable->failed_chunks, 1);
+    // Mark as failed for later recovery    // Mark as failed for later recovery
+    atomic_store(&rel_data->needs_retry, true); true);
+    atomic_fetch_add(&reliable->failed_chunks, 1);1);
     return false;
 }
 
-// Background recovery system for failed chunks
-void rg_recover_failed_chunks(rg_reliable_surface_t* reliable) {
+// Background recovery system for failed chunks// Background recovery system for failed chunks
+void rg_recover_failed_chunks(rg_reliable_surface_t* reliable) {ce_t* reliable) {
     if (!reliable) return;
 
-    uint32_t recovered = 0;
-    uint64_t current_time = get_timestamp_ns();
+    uint32_t recovered = 0;    uint32_t recovered = 0;
+    uint64_t current_time = get_timestamp_ns(); get_timestamp_ns();
     
-    for (uint32_t i = 0; i < reliable->surface->manifest.total_chunks; i++) {
+    for (uint32_t i = 0; i < reliable->surface->manifest.total_chunks; i++) {for (uint32_t i = 0; i < reliable->surface->manifest.total_chunks; i++) {
         rg_chunk_reliability_t* rel_data = &reliable->reliability_data[i];
         
-        if (atomic_load(&rel_data->needs_retry) && 
-            (current_time - rel_data->last_attempt) > (reliable->retry_interval_ns * 1000)) {
+        if (atomic_load(&rel_data->needs_retry) && if (atomic_load(&rel_data->needs_retry) && 
+            (current_time - rel_data->last_attempt) > (reliable->retry_interval_ns * 1000)) { > (reliable->retry_interval_ns * 1000)) {
             
-            // Attempt recovery (would need original data - implementation specific)
+            // Attempt recovery (would need original data - implementation specific)// Attempt recovery (would need original data - implementation specific)
             // This is where you'd implement chunk reconstruction or re-request
             atomic_store(&rel_data->needs_retry, false);
             recovered++;
         }
     }
     
-    if (recovered > 0) {
-        printf("[RECOVERY] 🔄 Recovered %u failed chunks\n", recovered);
+    if (recovered > 0) {if (recovered > 0) {
+        printf("[RECOVERY] 🔄 Recovered %u failed chunks\n", recovered);Y] 🔄 Recovered %u failed chunks\n", recovered);
     }
 }
 
-// Get reliability statistics
-void rg_get_reliability_stats(rg_reliable_surface_t* reliable, 
-                            uint32_t* failed_chunks, uint32_t* retry_ops) {
+// Get reliability statistics// Get reliability statistics
+void rg_get_reliability_stats(rg_reliable_surface_t* reliable, (rg_reliable_surface_t* reliable, 
+                            uint32_t* failed_chunks, uint32_t* retry_ops) {retry_ops) {
     if (!reliable) return;
     
-    if (failed_chunks) *failed_chunks = atomic_load(&reliable->failed_chunks);
+    if (failed_chunks) *failed_chunks = atomic_load(&reliable->failed_chunks);if (failed_chunks) *failed_chunks = atomic_load(&reliable->failed_chunks);
     if (retry_ops) *retry_ops = atomic_load(&reliable->retry_operations);
 }
 
-// Cleanup reliable surface
-void rg_destroy_reliable_surface(rg_reliable_surface_t* reliable) {
+// Cleanup reliable surface// Cleanup reliable surface
+void rg_destroy_reliable_surface(rg_reliable_surface_t* reliable) {rface(rg_reliable_surface_t* reliable) {
     if (!reliable) return;
     
-    if (reliable->reliability_data) free(reliable->reliability_data);
+    if (reliable->reliability_data) free(reliable->reliability_data);if (reliable->reliability_data) free(reliable->reliability_data);
     if (reliable->surface) rg_destroy_surface(reliable->surface);
     free(reliable);
+}
 }

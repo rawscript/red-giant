@@ -36,7 +36,7 @@ Red Giant Protocol is a **revolutionary high-performance data transmission syste
 
 ```
 red-giant-protocol/
-├── red_giant_server.go          # P2P Server with C-core integration
+├── server/red_giant_server.go          # P2P Server with C-core integration
 ├── red_giant.h                  # High-performance C header
 ├── red_giant.c                  # Optimized C implementation
 ├── red_giant_peer.go            # P2P File sharing client
@@ -185,7 +185,7 @@ docker-compose -f docker-compose.monitoring.yml up -d
 Environment variables:
 - `RED_GIANT_PORT=8080` - Server port
 - `RED_GIANT_HOST=0.0.0.0` - Server host  
-- `RED_GIANT_WORKERS=8` - Number of workers (default: CPU cores × 2)
+- `RED_GIANT_WORKERS` - Number of workers (default: CPU cores × 2)
 
 ## 📊 Performance Results
 
@@ -212,7 +212,7 @@ Visit http://localhost:8080 for:
 ### Build
 ```bash
 # The server auto-compiles the C core via CGO
-go run red_giant_server.go
+go run server/red_giant_server.go
 ```
 
 ## 🆘 Troubleshooting
