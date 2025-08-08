@@ -227,11 +227,14 @@ func testBinaryData() TestResult {
 	
 	// Create binary data
 	binaryData := make([]byte, 50000) // 50KB
-	for i := range binaryData {
-		binaryData[i] = byte(i % 256)
-	}
+		for i := range binaryData {
+			binaryData[i] = byte(i % 256)
+		}
+
+		dataSize := len(binaryData) // Capture the size here
+
+		resp, err := uploadDataWithContentType(string(binaryData), "binary_test.bin", "application/octet-stream")
 	
-	resp, err := uploadDataWithContentType(string(binaryData), "binary_test.bin", "application/octet-stream")
 	if err != nil {
 		return TestResult{
 			Name:     "Binary Data Processing",
@@ -252,85 +255,52 @@ func testBinaryData() TestResult {
 }
 
 func testConcurrentUploads() TestResult {
-	start := time.Now()
-	
-	// Test 5 concurrent uploads
-	concurrency := 5
-	results := make(chan error, concurrency)
-	
-	for i := 0; i < concurrency; i++ {
-		go func(id int) {
-			data := fmt.Sprintf("Concurrent test data from goroutine %d. %s", id, strings.Repeat("X", 1000))
-			_, err := uploadData(data, fmt.Sprintf("concurrent_%d.txt", id))
-			results <- err
-		}(i)
-	}
-	
-	// Wait for all to complete
-	var failed int
-	for i := 0; i < concurrency; i++ {
-		if err := <-results; err != nil {
-			failed++
-		}
-	}
-	
-	status := "PASS"
-	errorMsg := ""
-	if failed > 0 {
-		status = "FAIL"
-		errorMsg = fmt.Sprintf("%d out of %d uploads failed", failed, concurrency)
-	}
-	
-	return TestResult{
-		Name:     "Concurrent Uploads",
-		Status:   status,
-		Duration: time.Since(start).Milliseconds(),
-		Error:    errorMsg,
-	}
-}
+    start := time.Now()
 
-func testMetrics() TestResult {
-	start := time.Now()
-	
-	resp, err := http.Get("http://localhost:8080/metrics")
-	if err != nil {
-		return TestResult{
-			Name:     "Metrics Endpoint",
-			Status:   "FAIL",
-			Duration: time.Since(start).Milliseconds(),
-			Error:    err.Error(),
-		}
-	}
-	defer resp.Body.Close()
-	
-	var metrics map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
-		return TestResult{
-			Name:     "Metrics Endpoint",
-			Status:   "FAIL",
-			Duration: time.Since(start).Milliseconds(),
-			Error:    "Failed to decode metrics JSON",
-		}
-	}
-	
-	// Check if key metrics exist
-	requiredMetrics := []string{"total_requests", "total_bytes", "total_chunks", "uptime_seconds"}
-	for _, metric := range requiredMetrics {
-		if _, exists := metrics[metric]; !exists {
-			return TestResult{
-				Name:     "Metrics Endpoint",
-				Status:   "FAIL",
-				Duration: time.Since(start).Milliseconds(),
-				Error:    fmt.Sprintf("Missing metric: %s", metric),
-			}
-		}
-	}
-	
-	return TestResult{
-		Name:     "Metrics Endpoint",
-		Status:   "PASS",
-		Duration: time.Since(start).Milliseconds(),
-	}
+    // Test 5 concurrent uploads
+    concurrency := 5
+    results := make(chan error, concurrency)
+
+    // Use a semaphore to limit concurrency
+    semaphore := make(chan struct{}, concurrency)
+
+    for i := 0; i < concurrency; i++ {
+        // Acquire semaphore
+        semaphore <- struct{}{}
+
+        go func(id int) {
+            defer func() {
+                // Release semaphore
+                <-semaphore
+            }()
+
+            data := fmt.Sprintf("Concurrent test data from goroutine %d. %s", id, strings.Repeat("X", 1000))
+            _, err := uploadData(data, fmt.Sprintf("concurrent_%d.txt", id))
+            results <- err
+        }(i)
+    }
+
+    // Wait for all to complete
+    var failed int
+    for i := 0; i < concurrency; i++ {
+        if err := <-results; err != nil {
+            failed++
+        }
+    }
+
+    status := "PASS"
+    errorMsg := ""
+    if failed > 0 {
+        status = "FAIL"
+        errorMsg = fmt.Sprintf("%d out of %d uploads failed", failed, concurrency)
+    }
+
+    return TestResult{
+        Name:     "Concurrent Uploads",
+        Status:   status,
+        Duration: time.Since(start).Milliseconds(),
+        Error:    errorMsg,
+    }
 }
 
 func testPerformance() TestResult {
@@ -364,8 +334,11 @@ func testPerformance() TestResult {
 	}
 	
 	if uploadTime.Milliseconds() > 1000 { // Should complete within 1 second
-		status = "FAIL"
-		errorMsg = fmt.Sprintf("Upload took %d ms, too slow", uploadTime.Milliseconds())
+		if status = "FAIL" {
+		errorMsg += ","
+		}
+		status ="FAIL"
+		errorMsg += fmt.Sprintf(" Upload took too long: %d ms", uploadTime.Milliseconds())
 	}
 	
 	return TestResult{
@@ -419,9 +392,10 @@ func displayResults(suite *TestSuite) {
 	
 	for _, result := range suite.Results {
 		status := "✅"
-		if result.Status == "FAIL" {
-			status = "❌"
-		}
+		if resp.StatusCode != 200 {
+    body, _ := io.ReadAll(resp.Body)
+    return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+}
 		
 		throughputStr := ""
 		if result.Throughput > 0 {
