@@ -112,22 +112,45 @@ bool rg_expose_chunk_reliable(rg_reliable_surface_t* reliable, uint32_t chunk_id
 
 bool get_chunk_data(rg_exposure_surface_t* surface, uint32_t chunk_id, 
                    void** data, uint32_t* size) {
-    // This is where you implement your storage retrieval logic
-    // Example implementation:
-    rg_chunk_info_t chunk_info;
-    if (!rg_get_chunk_info(surface, chunk_id, &chunk_info)) {
+    if (!surface || !data || !size) {
+        errno = EINVAL;
+        perror("Invalid arguments to get_chunk_data");
         return false;
     }
 
+    // Get chunk information
+    rg_chunk_info_t chunk_info;
+    if (!rg_get_chunk_info(surface, chunk_id, &chunk_info)) {
+        perror("Failed to get chunk info");
+        return false;
+    }
+
+    // Validate chunk size
+    if (chunk_info.size == 0 || chunk_info.size > MAX_CHUNK_SIZE) {
+        errno = EINVAL;
+        perror("Invalid chunk size");
+        return false;
+    }
+
+    // Allocate memory for chunk data
     *size = chunk_info.size;
     *data = malloc(*size);
     if (!*data) {
+        perror("Failed to allocate memory for chunk data");
         return false;
     }
 
-    // Retrieve the actual data from your storage system
-    // This is implementation-specific and depends on how you store your chunks
+    // Attempt to retrieve chunk from storage
     if (!retrieve_chunk_from_storage(chunk_id, *data, *size)) {
+        perror("Failed to retrieve chunk from storage");
+        free(*data);
+        *data = NULL;
+        return false;
+    }
+
+    // Validate retrieved data
+    if (!validate_chunk_data(*data, *size)) {
+        perror("Retrieved chunk data validation failed");
         free(*data);
         *data = NULL;
         return false;
@@ -139,7 +162,7 @@ bool get_chunk_data(rg_exposure_surface_t* surface, uint32_t chunk_id,
 
 
 
-//recover failed chunks with integrity check and retry logic
+//Recover failed chunks with integrity check and retry logic
 void rg_recover_failed_chunks(rg_reliable_surface_t* reliable) {
     if (!reliable) return;
 
@@ -185,7 +208,14 @@ void rg_recover_failed_chunks(rg_reliable_surface_t* reliable) {
                     .tv_sec = 0,
                     .tv_nsec = reliable->retry_interval_ns * (1 << attempt)
                 };
-                nanosleep(&delay, NULL);
+                struct timespec remaining;
+                while (nanosleep(&delay, &remaining) == -1) {
+                    if (errno == EINTR) {
+                        delay = remaining;  // Continue with remaining time
+                    } else {
+                        perror("nanosleep");
+                        break;
+                    }
             }
              if (retry_success) {
                 atomic_store(&rel_data->needs_retry, false);
