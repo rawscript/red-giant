@@ -329,17 +329,17 @@ func testPerformance() TestResult {
 	errorMsg := ""
 	
 	if throughput < 50.0 { // Expect at least 50 MB/s for this test
-		status = "FAIL"
-		errorMsg = fmt.Sprintf("Throughput %.2f MB/s below threshold", throughput)
-	}
-	
-	if uploadTime.Milliseconds() > 1000 { // Should complete within 1 second
-		if status = "FAIL" {
-		errorMsg += ","
-		}
-		status ="FAIL"
-		errorMsg += fmt.Sprintf(" Upload took too long: %d ms", uploadTime.Milliseconds())
-	}
+    status = "FAIL"
+    errorMsg = fmt.Sprintf("Throughput %.2f MB/s below threshold", throughput)
+}
+
+if uploadTime.Milliseconds() > 1000 { // Should complete within 1 second
+    if status == "FAIL" {
+        errorMsg += ", "
+    }
+    status = "FAIL"
+    errorMsg += fmt.Sprintf(" Upload took too long: %d ms", uploadTime.Milliseconds())
+}
 	
 	return TestResult{
 		Name:       "Performance Validation",
