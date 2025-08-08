@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Optimized constants for high performance
-#define RG_MAX_CHUNK_SIZE (2 * 1024 * 1024)  // 2MB max chunks
+#define RG_MAX_CHUNK_SIZE (1024* 1024 * 64)  // 2MB max chunks
 #define RG_MAX_MANIFEST_SIZE 8192
 #define RG_RED_FLAG_MARKER 0xDEADBEEF
 #define RG_MAX_CONCURRENT_CHUNKS 1024
