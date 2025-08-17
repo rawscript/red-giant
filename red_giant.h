@@ -118,4 +118,3 @@ void rg_free_aligned(void* ptr);
 #endif
 
 #endif // RED_GIANT_H
-#endif // RED_GIANT_H

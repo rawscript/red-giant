@@ -1,8 +1,10 @@
 // Red Giant Protocol - High-Performance C Core Implementation
 // Feature test macros MUST be defined before any standard headers
+#ifndef _WIN32
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
+#endif
 
 #include "red_giant.h"
 #include <errno.h>
@@ -11,27 +13,35 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <time.h>
 #include <stdlib.h>
+#include <string.h>
 
-
-// Explicit POSIX time declarations for compatibility
+// Platform-specific time handling
+#ifdef _WIN32
+#include <windows.h>
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
+// Windows doesn't need custom timespec definition
+#else
+// POSIX systems
 #ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
 #endif
 
-// Ensure timespec is available
-#ifndef _STRUCT_TIMESPEC
+// Only define timespec if not already defined
+#if !defined(_STRUCT_TIMESPEC) && !defined(__timespec_defined)
 struct timespec {
   time_t tv_sec;
   long tv_nsec;
 };
 #endif
 
-// Explicit function declarations
+// Function declarations for POSIX systems
 extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 extern int posix_memalign(void **memptr, size_t alignment, size_t size);
+#endif
 
 // Platform-specific includes
 #ifdef __linux__

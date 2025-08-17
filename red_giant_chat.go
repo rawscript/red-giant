@@ -100,11 +100,18 @@ func (c *RedGiantChat) GetMessages() ([]ChatMessage, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("search failed with status %d", resp.StatusCode)
+	}
+
 	var result struct {
 		Files []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			PeerID     string `json:"peer_id"`
+			UploadedAt string `json:"uploaded_at"`
 		} `json:"files"`
+		Count int `json:"count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -113,20 +120,36 @@ func (c *RedGiantChat) GetMessages() ([]ChatMessage, error) {
 
 	var messages []ChatMessage
 	for _, file := range result.Files {
+		// Skip non-chat files
+		if !strings.Contains(file.Name, "chat_") {
+			continue
+		}
+
 		// Download and parse each chat message
 		msgData, err := c.downloadFile(file.ID)
 		if err != nil {
+			fmt.Printf("Warning: Failed to download message %s: %v\n", file.ID, err)
 			continue
 		}
 
 		var chatMsg ChatMessage
 		if err := json.Unmarshal(msgData, &chatMsg); err != nil {
+			fmt.Printf("Warning: Failed to parse message %s: %v\n", file.ID, err)
 			continue
 		}
 
 		// Filter messages for this user
 		if chatMsg.To == c.Username || chatMsg.To == "*" || chatMsg.From == c.Username {
 			messages = append(messages, chatMsg)
+		}
+	}
+
+	// Sort messages by timestamp
+	for i := 0; i < len(messages)-1; i++ {
+		for j := i + 1; j < len(messages); j++ {
+			if messages[i].Timestamp.After(messages[j].Timestamp) {
+				messages[i], messages[j] = messages[j], messages[i]
+			}
 		}
 	}
 
@@ -246,10 +269,10 @@ func (c *RedGiantChat) handleCommand(command string) {
 // Poll for new messages
 func (c *RedGiantChat) pollMessages() {
 	lastCheck := time.Now()
-	
+
 	for {
 		time.Sleep(2 * time.Second) // Poll every 2 seconds
-		
+
 		messages, err := c.GetMessages()
 		if err != nil {
 			continue
@@ -265,7 +288,7 @@ func (c *RedGiantChat) pollMessages() {
 				}
 			}
 		}
-		
+
 		lastCheck = time.Now()
 	}
 }

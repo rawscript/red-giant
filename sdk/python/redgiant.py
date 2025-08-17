@@ -7,6 +7,7 @@ import json
 import time
 import threading
 import requests
+import random
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,8 +19,10 @@ class FileInfo:
     name: str
     size: int
     hash: str
-    peer_id: str
     uploaded_at: str
+    peer_id: Optional[str] = None
+    md5_hash: Optional[str] = None
+    content_type: Optional[str] = None
 
 
 @dataclass
@@ -30,7 +33,11 @@ class UploadResult:
     chunks_processed: int
     throughput_mbps: float
     processing_time_ms: int
-    message: str
+    message: str = "Upload completed"
+    content_type: Optional[str] = None
+    original_size: Optional[int] = None
+    is_compressed: Optional[bool] = None
+    optimal_chunk: Optional[int] = None
 
 
 @dataclass
@@ -92,7 +99,14 @@ class RedGiantClient:
             raise Exception(f"Upload failed: {response.status_code} {response.text}")
         
         result_data = response.json()
-        return UploadResult(**result_data)
+        # Filter out any unexpected fields to avoid dataclass errors
+        expected_fields = {
+            'status', 'file_id', 'bytes_processed', 'chunks_processed', 
+            'throughput_mbps', 'processing_time_ms', 'message',
+            'content_type', 'original_size', 'is_compressed', 'optimal_chunk'
+        }
+        filtered_data = {k: v for k, v in result_data.items() if k in expected_fields}
+        return UploadResult(**filtered_data)
     
     def upload_json(self, data: Dict[str, Any], file_name: str) -> UploadResult:
         """Upload JSON data to the Red Giant network"""
@@ -146,18 +160,27 @@ class RedGiantClient:
     
     def search_files(self, pattern: str) -> List[FileInfo]:
         """Search for files by name pattern"""
-        params = {'q': pattern}
-        response = self.session.get(
-            f"{self.base_url}/search",
-            params=params,
-            timeout=self.timeout
-        )
+        # Use /files endpoint and filter client-side for now
+        response = self.session.get(f"{self.base_url}/files", timeout=self.timeout)
         
         if response.status_code != 200:
             raise Exception(f"Search failed: {response.status_code}")
         
         result = response.json()
-        return [FileInfo(**file_data) for file_data in result['files']]
+        all_files = []
+        
+        for file_data in result.get('files', []):
+            # Filter out unexpected fields to avoid dataclass errors
+            expected_fields = {
+                'id', 'name', 'size', 'hash', 'peer_id', 'uploaded_at', 
+                'md5_hash', 'content_type'
+            }
+            filtered_data = {k: v for k, v in file_data.items() if k in expected_fields}
+            all_files.append(FileInfo(**filtered_data))
+        
+        # Filter files by pattern
+        matching_files = [f for f in all_files if pattern in f.name]
+        return matching_files
     
     def process_data(self, data: bytes) -> Dict[str, Any]:
         """Process raw data using Red Giant's high-performance C core"""
@@ -268,24 +291,49 @@ class ChatRoom:
     
     def _poll_messages(self):
         """Internal method to poll for new messages"""
+        processed_messages = set()
+        
         while self.is_polling:
             try:
                 pattern = f"chat_{self.room_id}_"
                 files = self.client.search_files(pattern)
                 
                 for file_info in files:
-                    file_time = time.mktime(time.strptime(file_info.uploaded_at, "%Y-%m-%dT%H:%M:%S.%fZ"))
+                    # Skip if we've already processed this message
+                    if file_info.id in processed_messages:
+                        continue
                     
-                    if file_time > self.last_check and file_info.peer_id != self.client.peer_id:
+                    try:
+                        # Handle different date formats
+                        if hasattr(file_info, 'uploaded_at') and file_info.uploaded_at:
+                            if '.' in file_info.uploaded_at:
+                                file_time = time.mktime(time.strptime(file_info.uploaded_at, "%Y-%m-%dT%H:%M:%S.%fZ"))
+                            else:
+                                file_time = time.mktime(time.strptime(file_info.uploaded_at, "%Y-%m-%dT%H:%M:%SZ"))
+                        else:
+                            file_time = time.time()
+                    except (ValueError, AttributeError):
+                        # Fallback to current time if parsing fails
+                        file_time = time.time()
+                    
+                    if file_time > self.last_check and (not file_info.peer_id or file_info.peer_id != self.client.peer_id):
                         try:
                             data = self.client.download_data(file_info.id)
                             message = json.loads(data.decode('utf-8'))
                             
-                            if message['from'] != self.username:
+                            # Validate message structure and check if it's for this room/user
+                            if (message.get('from') and message.get('content') and 
+                                message['from'] != self.username and
+                                (message.get('to') == self.room_id or 
+                                 message.get('to') == self.username or 
+                                 message.get('to') == '*')):
+                                
                                 self.messages.append(message)
                                 self.on_message(message)
+                                processed_messages.add(file_info.id)
+                                
                         except Exception as e:
-                            print(f"Error processing message: {e}")
+                            print(f"Error processing message {file_info.id}: {e}")
                 
                 self.last_check = time.time()
                 
@@ -350,8 +398,6 @@ class IoTDevice:
     
     def _generate_batch(self):
         """Generate a batch of sensor readings"""
-        import random
-        
         readings = []
         
         for i in range(self.batch_size):

@@ -9,7 +9,6 @@ package main
 */
 import "C"
 import (
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -50,13 +49,13 @@ const (
 
 // Content type detection and optimization
 type ContentAnalyzer struct {
-	ContentType   string
-	Size          int64
-	IsCompressed  bool
-	IsStreamable  bool
-	OptimalChunk  int
-	ProcessMode   ProcessingMode
-	Encoding      string
+	ContentType  string
+	Size         int64
+	IsCompressed bool
+	IsStreamable bool
+	OptimalChunk int
+	ProcessMode  ProcessingMode
+	Encoding     string
 }
 
 // Adaptive configuration based on request type
@@ -71,7 +70,7 @@ type AdaptiveConfig struct {
 	// Adaptive settings
 	EnableCompression    bool `json:"enable_compression"`
 	EnableStreaming      bool `json:"enable_streaming"`
-	AutoOptimize        bool `json:"auto_optimize"`
+	AutoOptimize         bool `json:"auto_optimize"`
 	MaxConcurrentStreams int  `json:"max_concurrent_streams"`
 }
 
@@ -80,31 +79,31 @@ func NewAdaptiveConfig() *AdaptiveConfig {
 		Port:                 8080,
 		Host:                 "0.0.0.0",
 		MaxWorkers:           runtime.NumCPU() * 2,
-		MaxChunkSize:         256 * 1024, // 256KB default
+		MaxChunkSize:         256 * 1024,  // 256KB default
 		BufferSize:           1024 * 1024, // 1MB
 		LogLevel:             "INFO",
 		EnableCompression:    true,
 		EnableStreaming:      true,
-		AutoOptimize:        true,
+		AutoOptimize:         true,
 		MaxConcurrentStreams: 100,
 	}
 }
 
 // Enhanced metrics with format-specific tracking
 type AdaptiveMetrics struct {
-	TotalRequests     int64
-	TotalBytes        int64
-	TotalChunks       int64
-	AverageLatency    int64
-	ErrorCount        int64
-	StartTime         time.Time
+	TotalRequests  int64
+	TotalBytes     int64
+	TotalChunks    int64
+	AverageLatency int64
+	ErrorCount     int64
+	StartTime      time.Time
 
 	// Format-specific metrics
-	JSONRequests      int64
-	BinaryRequests    int64
-	StreamRequests    int64
-	CompressedBytes   int64
-	OptimizationHits  int64
+	JSONRequests     int64
+	BinaryRequests   int64
+	StreamRequests   int64
+	CompressedBytes  int64
+	OptimizationHits int64
 
 	mu sync.RWMutex
 }
@@ -200,11 +199,11 @@ type StreamSession struct {
 func NewAdaptiveProcessor(config *AdaptiveConfig) *AdaptiveProcessor {
 	// Create C manifest for high-performance surface
 	cManifest := C.rg_manifest_t{
-		total_size:         C.uint64_t(config.BufferSize),
-		chunk_size:         C.uint32_t(config.MaxChunkSize),
-		encoding_type:      C.uint16_t(0x01),
+		total_size:          C.uint64_t(config.BufferSize),
+		chunk_size:          C.uint32_t(config.MaxChunkSize),
+		encoding_type:       C.uint16_t(0x01),
 		exposure_cadence_ms: C.uint32_t(1), // Ultra-fast
-		total_chunks:       C.uint32_t((config.BufferSize + config.MaxChunkSize - 1) / config.MaxChunkSize),
+		total_chunks:        C.uint32_t((config.BufferSize + config.MaxChunkSize - 1) / config.MaxChunkSize),
 	}
 
 	// Initialize file ID
@@ -237,8 +236,8 @@ func NewAdaptiveProcessor(config *AdaptiveConfig) *AdaptiveProcessor {
 // Intelligent content analysis for optimal processing
 func (ap *AdaptiveProcessor) analyzeContent(data []byte, contentType string) *ContentAnalyzer {
 	analyzer := &ContentAnalyzer{
-		ContentType: contentType,
-		Size:        int64(len(data)),
+		ContentType:  contentType,
+		Size:         int64(len(data)),
 		OptimalChunk: ap.config.MaxChunkSize,
 	}
 
@@ -261,7 +260,7 @@ func (ap *AdaptiveProcessor) analyzeContent(data []byte, contentType string) *Co
 
 	case strings.Contains(analyzer.ContentType, "image/"):
 		analyzer.ProcessMode = ModeImage
-		analyzer.OptimalChunk = 512 * 1024 // Larger chunks for images
+		analyzer.OptimalChunk = 512 * 1024                // Larger chunks for images
 		analyzer.IsStreamable = analyzer.Size > 1024*1024 // Stream if > 1MB
 
 	case strings.Contains(analyzer.ContentType, "video/"):
@@ -275,7 +274,7 @@ func (ap *AdaptiveProcessor) analyzeContent(data []byte, contentType string) *Co
 		analyzer.IsStreamable = analyzer.Size > 512*1024
 
 	case strings.Contains(analyzer.ContentType, "application/gzip") ||
-		 strings.Contains(analyzer.ContentType, "application/zip"):
+		strings.Contains(analyzer.ContentType, "application/zip"):
 		analyzer.ProcessMode = ModeCompressed
 		analyzer.IsCompressed = true
 		analyzer.OptimalChunk = 1024 * 1024 // Large chunks for compressed data

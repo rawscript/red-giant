@@ -55,14 +55,14 @@ type ProcessResult struct {
 
 // NetworkStats represents network statistics
 type NetworkStats struct {
-	TotalRequests   int64   `json:"total_requests"`
-	TotalBytes      int64   `json:"total_bytes"`
-	TotalChunks     int64   `json:"total_chunks"`
-	AverageLatency  int64   `json:"average_latency_ms"`
-	ErrorCount      int64   `json:"error_count"`
-	UptimeSeconds   int64   `json:"uptime_seconds"`
-	ThroughputMbps  float64 `json:"throughput_mbps"`
-	Timestamp       int64   `json:"timestamp"`
+	TotalRequests  int64   `json:"total_requests"`
+	TotalBytes     int64   `json:"total_bytes"`
+	TotalChunks    int64   `json:"total_chunks"`
+	AverageLatency int64   `json:"average_latency_ms"`
+	ErrorCount     int64   `json:"error_count"`
+	UptimeSeconds  int64   `json:"uptime_seconds"`
+	ThroughputMbps float64 `json:"throughput_mbps"`
+	Timestamp      int64   `json:"timestamp"`
 }
 
 // NewClient creates a new Red Giant client
@@ -361,7 +361,10 @@ func (c *Client) StreamingUpload(filePath string, chunkSize int) (*UploadResult,
 		return nil, fmt.Errorf("failed to copy file data: %w", err)
 	}
 
-	writer.Close()
+	err = writer.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
 
 	// Create request
 	req, err := http.NewRequest("POST", c.BaseURL+"/upload", &buf)

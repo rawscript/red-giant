@@ -10,11 +10,11 @@ class RedGiantClient {
     }
 
     generatePeerID() {
-        return 'peer_' + Math.random().toString(36).substr(2, 9);
+        return 'peer_' + Math.random().toString(36).substring(2, 11);
     }
 
     generateSessionID() {
-        return 'session_' + Math.random().toString(36).substr(2, 9);
+        return 'session_' + Math.random().toString(36).substring(2, 11);
     }
 
     async uploadJSON(data, fileName) {
@@ -28,8 +28,25 @@ class RedGiantClient {
     }
 
     async upload(data, fileName) {
-        // Basic upload implementation
-        return { id: 'file_' + Date.now(), fileName, size: data.length };
+        // Actual HTTP upload implementation
+        const formData = new FormData();
+        const blob = new Blob([data], { type: 'application/octet-stream' });
+        formData.append('file', blob, fileName);
+
+        const response = await fetch(`${this.baseURL}/upload`, {
+            method: 'POST',
+            headers: {
+                'X-Peer-ID': this.peerID,
+                'X-File-Name': fileName
+            },
+            body: typeof data === 'string' ? data : formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.json();
     }
 
     onToken(token, result) {
@@ -73,13 +90,71 @@ class RedGiantClient {
     }
 
     async searchFiles(pattern) {
-        // Implementation for searching files
-        return [];
+        // Use /files endpoint and filter client-side for now
+        const response = await fetch(`${this.baseURL}/files`, {
+            method: 'GET',
+            headers: {
+                'X-Peer-ID': this.peerID
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Search failed: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        const allFiles = result.files || [];
+        
+        // Filter files by pattern
+        return allFiles.filter(file => file.name && file.name.includes(pattern));
     }
 
     async downloadData(fileId) {
-        // Implementation for downloading data
-        return new ArrayBuffer(0);
+        // Actual download implementation
+        const response = await fetch(`${this.baseURL}/download/${fileId}`, {
+            method: 'GET',
+            headers: {
+                'X-Peer-ID': this.peerID
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.arrayBuffer();
+    }
+
+    async healthCheck() {
+        // Health check implementation
+        const response = await fetch(`${this.baseURL}/health`, {
+            method: 'GET',
+            headers: {
+                'X-Peer-ID': this.peerID
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Health check failed: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.json();
+    }
+
+    async getNetworkStats() {
+        // Network stats implementation
+        const response = await fetch(`${this.baseURL}/metrics`, {
+            method: 'GET',
+            headers: {
+                'X-Peer-ID': this.peerID
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Stats request failed: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.json();
     }
 }
 
@@ -181,27 +256,41 @@ class ChatRoom {
     }
 
     async pollMessages() {
-        const pattern = `chat_${this.roomID}_`;
-        const files = await this.client.searchFiles(pattern);
+        try {
+            const pattern = `chat_${this.roomID}_`;
+            const files = await this.client.searchFiles(pattern);
 
-        for (const file of files) {
-            const fileDate = new Date(file.uploaded_at);
-            if (fileDate > this.lastCheck && file.peer_id !== this.client.peerID) {
+            for (const file of files) {
+                // Skip if we've already processed this message
+                if (this.messages.some(msg => msg.id === file.id)) {
+                    continue;
+                }
+
                 try {
-                    const data = await this.client.downloadData(file.id);
-                    const message = JSON.parse(new TextDecoder().decode(data));
+                    const fileDate = new Date(file.uploaded_at || Date.now());
+                    if (fileDate > this.lastCheck && file.peer_id !== this.client.peerID) {
+                        const data = await this.client.downloadData(file.id);
+                        const arrayBuffer = data instanceof ArrayBuffer ? data : data.buffer;
+                        const message = JSON.parse(new TextDecoder().decode(arrayBuffer));
 
-                    if (message.from !== this.username) {
-                        this.messages.push(message);
-                        this.onMessage(message);
+                        // Validate message structure
+                        if (message.from && message.content && message.from !== this.username) {
+                            // Check if message is for this room or user
+                            if (message.to === this.roomID || message.to === this.username || message.to === '*') {
+                                this.messages.push(message);
+                                this.onMessage(message);
+                            }
+                        }
                     }
                 } catch (error) {
-                    console.error('Error processing message:', error);
+                    console.error('Error processing message:', file.id, error);
                 }
             }
-        }
 
-        this.lastCheck = new Date();
+            this.lastCheck = new Date();
+        } catch (error) {
+            console.error('Error polling messages:', error);
+        }
     }
 }
 

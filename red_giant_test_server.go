@@ -1,4 +1,3 @@
-
 // Red Giant Protocol - Comprehensive Test Server
 package main
 
@@ -10,11 +9,9 @@ package main
 */
 import "C"
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,13 +54,13 @@ type TestMetrics struct {
 	MaxLatency        int64     `json:"max_latency_ms"`
 	SuccessRate       float64   `json:"success_rate"`
 	ActiveConnections int64     `json:"active_connections"`
-	
+
 	// Edge case tracking
 	EmptyRequests     int64 `json:"empty_requests"`
 	OversizedRequests int64 `json:"oversized_requests"`
 	MalformedRequests int64 `json:"malformed_requests"`
 	TimeoutRequests   int64 `json:"timeout_requests"`
-	
+
 	mu sync.RWMutex
 }
 
@@ -97,7 +94,7 @@ func NewTestConfig() *TestConfig {
 		Port:         5000, // Use Replit's recommended port
 		Host:         "0.0.0.0",
 		MaxWorkers:   runtime.NumCPU() * 2,
-		MaxChunkSize: 256 * 1024, // 256KB
+		MaxChunkSize: 256 * 1024,       // 256KB
 		BufferSize:   10 * 1024 * 1024, // 10MB
 		EnableDebug:  true,
 		TestMode:     true,
@@ -119,26 +116,31 @@ func NewTestProcessor(config *TestConfig) *TestProcessor {
 	if totalChunks > C.RG_MAX_CONCURRENT_CHUNKS {
 		totalChunks = C.RG_MAX_CONCURRENT_CHUNKS
 	}
-	
+
 	cManifest := C.rg_manifest_t{
-		total_size:           C.uint64_t(config.BufferSize),
-		chunk_size:           C.uint32_t(config.MaxChunkSize),
-		encoding_type:        C.uint16_t(0x01),
-		exposure_cadence_ms:  C.uint32_t(1),
-		total_chunks:         C.uint32_t(totalChunks),
-		version:              C.uint32_t(1),
+		total_size:          C.uint64_t(config.BufferSize),
+		chunk_size:          C.uint32_t(config.MaxChunkSize),
+		encoding_type:       C.uint16_t(0x01),
+		exposure_cadence_ms: C.uint32_t(1),
+		total_chunks:        C.uint32_t(totalChunks),
+		version:             C.uint32_t(1),
 	}
-	
+
 	// Set file ID
 	fileID := fmt.Sprintf("test_surface_%d", time.Now().Unix())
-	copy(cManifest.file_id[:], fileID)
-	
+	for i, b := range []byte(fileID) {
+		if i >= len(cManifest.file_id)-1 {
+			break
+		}
+		cManifest.file_id[i] = C.char(b)
+	}
+
 	// Create surface with error checking
 	surface := C.rg_create_surface(&cManifest)
 	if surface == nil {
 		log.Fatal("Failed to create Red Giant test surface")
 	}
-	
+
 	processor := &TestProcessor{
 		config:      config,
 		metrics:     NewTestMetrics(),
@@ -147,7 +149,7 @@ func NewTestProcessor(config *TestConfig) *TestProcessor {
 		fileStorage: make(map[string]*TestFile),
 		workerPool:  make(chan struct{}, config.MaxWorkers),
 	}
-	
+
 	processor.logger.Printf("🧪 Test processor initialized with C-core")
 	return processor
 }
@@ -157,60 +159,60 @@ func (tp *TestProcessor) ProcessDataSafe(data []byte, fileName string) (map[stri
 	start := time.Now()
 	atomic.AddInt64(&tp.metrics.ActiveConnections, 1)
 	defer atomic.AddInt64(&tp.metrics.ActiveConnections, -1)
-	
+
 	// Validate input
 	if len(data) == 0 {
 		atomic.AddInt64(&tp.metrics.EmptyRequests, 1)
 		return nil, fmt.Errorf("empty data provided")
 	}
-	
+
 	if len(data) > tp.config.BufferSize {
 		atomic.AddInt64(&tp.metrics.OversizedRequests, 1)
 		return nil, fmt.Errorf("data too large: %d bytes (max: %d)", len(data), tp.config.BufferSize)
 	}
-	
+
 	// Calculate optimal chunking
 	chunkSize := tp.config.MaxChunkSize
 	totalChunks := (len(data) + chunkSize - 1) / chunkSize
-	
+
 	if totalChunks > int(C.RG_MAX_CONCURRENT_CHUNKS) {
 		return nil, fmt.Errorf("too many chunks: %d (max: %d)", totalChunks, C.RG_MAX_CONCURRENT_CHUNKS)
 	}
-	
+
 	// Process chunks with worker pool
 	numWorkers := tp.config.MaxWorkers
 	if totalChunks < numWorkers {
 		numWorkers = totalChunks
 	}
-	
+
 	var wg sync.WaitGroup
 	var processedChunks int64
 	var processingErrors int64
-	
+
 	for worker := 0; worker < numWorkers; worker++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			
+
 			// Acquire worker slot
 			tp.workerPool <- struct{}{}
 			defer func() { <-tp.workerPool }()
-			
+
 			start := workerID * (totalChunks / numWorkers)
 			end := start + (totalChunks / numWorkers)
 			if workerID == numWorkers-1 {
 				end = totalChunks
 			}
-			
+
 			for i := start; i < end; i++ {
 				chunkStart := i * chunkSize
 				chunkEnd := chunkStart + chunkSize
 				if chunkEnd > len(data) {
 					chunkEnd = len(data)
 				}
-				
+
 				chunkData := data[chunkStart:chunkEnd]
-				
+
 				// Expose chunk with error checking
 				success := C.rg_expose_chunk_fast(
 					tp.surface,
@@ -218,7 +220,7 @@ func (tp *TestProcessor) ProcessDataSafe(data []byte, fileName string) (map[stri
 					unsafe.Pointer(&chunkData[0]),
 					C.uint32_t(len(chunkData)),
 				)
-				
+
 				if bool(success) {
 					atomic.AddInt64(&processedChunks, 1)
 				} else {
@@ -230,26 +232,26 @@ func (tp *TestProcessor) ProcessDataSafe(data []byte, fileName string) (map[stri
 			}
 		}(worker)
 	}
-	
+
 	wg.Wait()
-	
+
 	if processingErrors > 0 {
 		return nil, fmt.Errorf("failed to process %d chunks", processingErrors)
 	}
-	
+
 	// Raise red flag
 	C.rg_raise_red_flag(tp.surface)
-	
+
 	// Calculate performance metrics
 	duration := time.Since(start)
 	throughput := float64(len(data)) / duration.Seconds() / (1024 * 1024)
-	
+
 	// Update metrics
 	tp.updateMetrics(int64(len(data)), processedChunks, duration, throughput)
-	
+
 	// Generate file info
 	fileID := tp.generateFileID(data, fileName)
-	
+
 	// Store file
 	testFile := &TestFile{
 		ID:          fileID,
@@ -268,11 +270,11 @@ func (tp *TestProcessor) ProcessDataSafe(data []byte, fileName string) (map[stri
 		},
 	}
 	copy(testFile.Data, data)
-	
+
 	tp.storageMu.Lock()
 	tp.fileStorage[fileID] = testFile
 	tp.storageMu.Unlock()
-	
+
 	return map[string]interface{}{
 		"status":             "success",
 		"file_id":            fileID,
@@ -292,11 +294,11 @@ func (tp *TestProcessor) updateMetrics(bytes, chunks int64, duration time.Durati
 	atomic.AddInt64(&tp.metrics.TotalRequests, 1)
 	atomic.AddInt64(&tp.metrics.TotalBytes, bytes)
 	atomic.AddInt64(&tp.metrics.TotalChunks, chunks)
-	
+
 	latencyMs := duration.Milliseconds()
 	atomic.StoreInt64(&tp.metrics.AverageLatency, latencyMs)
 	tp.metrics.LastRequestTime = time.Now()
-	
+
 	// Update min/max latency
 	for {
 		current := atomic.LoadInt64(&tp.metrics.MinLatency)
@@ -304,19 +306,19 @@ func (tp *TestProcessor) updateMetrics(bytes, chunks int64, duration time.Durati
 			break
 		}
 	}
-	
+
 	for {
 		current := atomic.LoadInt64(&tp.metrics.MaxLatency)
 		if latencyMs <= current || atomic.CompareAndSwapInt64(&tp.metrics.MaxLatency, current, latencyMs) {
 			break
 		}
 	}
-	
+
 	// Update max throughput
 	if throughput > tp.metrics.MaxThroughput {
 		tp.metrics.MaxThroughput = throughput
 	}
-	
+
 	// Calculate success rate
 	totalReqs := atomic.LoadInt64(&tp.metrics.TotalRequests)
 	errors := atomic.LoadInt64(&tp.metrics.ErrorCount)
@@ -330,6 +332,15 @@ func (tp *TestProcessor) generateFileID(data []byte, filename string) string {
 	return fmt.Sprintf("%x", hash[:8])
 }
 
+// Cleanup resources
+func (tp *TestProcessor) Cleanup() {
+	if tp.surface != nil {
+		C.rg_destroy_surface(tp.surface)
+		tp.surface = nil
+	}
+	tp.logger.Println("Test processor cleanup completed")
+}
+
 // HTTP Handlers
 func (tp *TestProcessor) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -337,13 +348,13 @@ func (tp *TestProcessor) handleUpload(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&tp.metrics.MalformedRequests, 1)
 		return
 	}
-	
+
 	// Get metadata
 	fileName := r.Header.Get("X-File-Name")
 	if fileName == "" {
 		fileName = fmt.Sprintf("upload_%d", time.Now().Unix())
 	}
-	
+
 	// Read data with size limit
 	data, err := io.ReadAll(io.LimitReader(r.Body, int64(tp.config.BufferSize)))
 	if err != nil {
@@ -351,7 +362,7 @@ func (tp *TestProcessor) handleUpload(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&tp.metrics.ErrorCount, 1)
 		return
 	}
-	
+
 	// Process data
 	result, err := tp.ProcessDataSafe(data, fileName)
 	if err != nil {
@@ -359,7 +370,7 @@ func (tp *TestProcessor) handleUpload(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&tp.metrics.ErrorCount, 1)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -370,16 +381,16 @@ func (tp *TestProcessor) handleDownload(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "File ID required", http.StatusBadRequest)
 		return
 	}
-	
+
 	tp.storageMu.RLock()
 	file, exists := tp.fileStorage[fileID]
 	tp.storageMu.RUnlock()
-	
+
 	if !exists {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", file.ContentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.Name))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", file.Size))
@@ -388,33 +399,33 @@ func (tp *TestProcessor) handleDownload(w http.ResponseWriter, r *http.Request) 
 
 func (tp *TestProcessor) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(tp.metrics.StartTime).Seconds()
-	
+
 	// Get C performance stats
 	var cThroughput C.uint32_t
 	cElapsed := C.rg_get_performance_stats(tp.surface, &cThroughput)
-	
+
 	metrics := map[string]interface{}{
-		"total_requests":       atomic.LoadInt64(&tp.metrics.TotalRequests),
-		"total_bytes":          atomic.LoadInt64(&tp.metrics.TotalBytes),
-		"total_chunks":         atomic.LoadInt64(&tp.metrics.TotalChunks),
-		"average_latency_ms":   atomic.LoadInt64(&tp.metrics.AverageLatency),
-		"min_latency_ms":       atomic.LoadInt64(&tp.metrics.MinLatency),
-		"max_latency_ms":       atomic.LoadInt64(&tp.metrics.MaxLatency),
-		"error_count":          atomic.LoadInt64(&tp.metrics.ErrorCount),
-		"success_rate":         tp.metrics.SuccessRate,
-		"uptime_seconds":       int64(uptime),
-		"max_throughput_mbps":  tp.metrics.MaxThroughput,
-		"active_connections":   atomic.LoadInt64(&tp.metrics.ActiveConnections),
-		"empty_requests":       atomic.LoadInt64(&tp.metrics.EmptyRequests),
-		"oversized_requests":   atomic.LoadInt64(&tp.metrics.OversizedRequests),
-		"malformed_requests":   atomic.LoadInt64(&tp.metrics.MalformedRequests),
-		"timeout_requests":     atomic.LoadInt64(&tp.metrics.TimeoutRequests),
-		"c_core_elapsed_ms":    int64(cElapsed),
-		"c_core_throughput":    int64(cThroughput),
-		"surface_complete":     bool(C.rg_is_complete(tp.surface)),
-		"timestamp":            time.Now().Unix(),
+		"total_requests":      atomic.LoadInt64(&tp.metrics.TotalRequests),
+		"total_bytes":         atomic.LoadInt64(&tp.metrics.TotalBytes),
+		"total_chunks":        atomic.LoadInt64(&tp.metrics.TotalChunks),
+		"average_latency_ms":  atomic.LoadInt64(&tp.metrics.AverageLatency),
+		"min_latency_ms":      atomic.LoadInt64(&tp.metrics.MinLatency),
+		"max_latency_ms":      atomic.LoadInt64(&tp.metrics.MaxLatency),
+		"error_count":         atomic.LoadInt64(&tp.metrics.ErrorCount),
+		"success_rate":        tp.metrics.SuccessRate,
+		"uptime_seconds":      int64(uptime),
+		"max_throughput_mbps": tp.metrics.MaxThroughput,
+		"active_connections":  atomic.LoadInt64(&tp.metrics.ActiveConnections),
+		"empty_requests":      atomic.LoadInt64(&tp.metrics.EmptyRequests),
+		"oversized_requests":  atomic.LoadInt64(&tp.metrics.OversizedRequests),
+		"malformed_requests":  atomic.LoadInt64(&tp.metrics.MalformedRequests),
+		"timeout_requests":    atomic.LoadInt64(&tp.metrics.TimeoutRequests),
+		"c_core_elapsed_ms":   int64(cElapsed),
+		"c_core_throughput":   int64(cThroughput),
+		"surface_complete":    bool(C.rg_is_complete(tp.surface)),
+		"timestamp":           time.Now().Unix(),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(metrics)
 }
@@ -426,29 +437,58 @@ func (tp *TestProcessor) handleFiles(w http.ResponseWriter, r *http.Request) {
 		files = append(files, file)
 	}
 	tp.storageMu.RUnlock()
-	
+
 	response := map[string]interface{}{
 		"files": files,
 		"count": len(files),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
+func (tp *TestProcessor) handleSearch(w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt64(&tp.metrics.TotalRequests, 1)
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "Missing query parameter 'q'", http.StatusBadRequest)
+		atomic.AddInt64(&tp.metrics.ErrorCount, 1)
+		return
+	}
+
+	tp.filesMutex.RLock()
+	var matchingFiles []FileInfo
+	for _, file := range tp.files {
+		if strings.Contains(file.Name, query) {
+			matchingFiles = append(matchingFiles, file)
+		}
+	}
+	tp.filesMutex.RUnlock()
+
+	result := map[string]interface{}{
+		"files": matchingFiles,
+		"count": len(matchingFiles),
+		"query": query,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func (tp *TestProcessor) handleHealth(w http.ResponseWriter, r *http.Request) {
 	health := map[string]interface{}{
-		"status":      "healthy",
-		"version":     "1.0.0",
-		"mode":        "test",
-		"c_core":      tp.surface != nil,
-		"uptime":      time.Since(tp.metrics.StartTime).Seconds(),
-		"requests":    atomic.LoadInt64(&tp.metrics.TotalRequests),
-		"errors":      atomic.LoadInt64(&tp.metrics.ErrorCount),
+		"status":       "healthy",
+		"version":      "1.0.0",
+		"mode":         "test",
+		"c_core":       tp.surface != nil,
+		"uptime":       time.Since(tp.metrics.StartTime).Seconds(),
+		"requests":     atomic.LoadInt64(&tp.metrics.TotalRequests),
+		"errors":       atomic.LoadInt64(&tp.metrics.ErrorCount),
 		"success_rate": tp.metrics.SuccessRate,
-		"timestamp":   time.Now().Unix(),
+		"timestamp":    time.Now().Unix(),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(health)
 }
@@ -585,31 +625,24 @@ curl http://localhost:%d/health</pre>
     </script>
 </body>
 </html>`, tp.config.Port, tp.config.MaxWorkers, tp.config.MaxChunkSize/1024, tp.config.BufferSize/(1024*1024), tp.config.Port, tp.config.Port, tp.config.Port)
-	
+
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(html))
 }
 
-func (tp *TestProcessor) Cleanup() {
-	if tp.surface != nil {
-		C.rg_destroy_surface(tp.surface)
-		tp.surface = nil
-	}
-}
-
 func main() {
 	config := NewTestConfig()
-	
+
 	// Override with environment variables
 	if port := os.Getenv("PORT"); port != "" {
 		if p, err := strconv.Atoi(port); err == nil {
 			config.Port = p
 		}
 	}
-	
+
 	processor := NewTestProcessor(config)
 	defer processor.Cleanup()
-	
+
 	// Setup HTTP routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", processor.handleRoot)
@@ -617,8 +650,9 @@ func main() {
 	mux.HandleFunc("/download/", processor.handleDownload)
 	mux.HandleFunc("/metrics", processor.handleMetrics)
 	mux.HandleFunc("/files", processor.handleFiles)
+	mux.HandleFunc("/search", processor.handleSearch)
 	mux.HandleFunc("/health", processor.handleHealth)
-	
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", config.Host, config.Port),
 		Handler:      mux,
@@ -626,34 +660,34 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	
+
 	// Graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	go func() {
 		<-sigChan
 		processor.logger.Println("Shutting down test server...")
-		
+
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer shutdownCancel()
-		
+
 		server.Shutdown(shutdownCtx)
 		cancel()
 	}()
-	
+
 	processor.logger.Printf("🧪 Red Giant Test Server starting on %s:%d", config.Host, config.Port)
 	processor.logger.Printf("🔗 Web interface: http://localhost:%d", config.Port)
 	processor.logger.Printf("📊 Metrics: http://localhost:%d/metrics", config.Port)
 	processor.logger.Printf("❤️  Health: http://localhost:%d/health", config.Port)
-	
+
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		processor.logger.Fatalf("Server failed to start: %v", err)
 	}
-	
+
 	<-ctx.Done()
 	processor.logger.Println("Red Giant Test Server stopped")
 }

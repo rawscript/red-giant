@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -197,7 +196,7 @@ func (uc *UniversalClient) uploadWithType(data []byte, fileName, contentType str
 	fmt.Printf("   • Server throughput: %.2f MB/s\n", result.ThroughputMbps)
 	fmt.Printf("   • Optimal chunk: %d KB\n", result.OptimalChunk/1024)
 	fmt.Printf("   • Compressed: %v\n", result.IsCompressed)
-	fmt.Printf("   • Compression ratio: %.1f%%\n", 
+	fmt.Printf("   • Compression ratio: %.1f%%\n",
 		(1.0-float64(result.BytesProcessed)/float64(result.OriginalSize))*100)
 
 	return &result, nil
@@ -262,13 +261,13 @@ func main() {
 		}
 		jsonStr := os.Args[2]
 		fileName := os.Args[3]
-		
+
 		var data interface{}
 		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 			fmt.Printf("❌ Invalid JSON: %v\n", err)
 			return
 		}
-		
+
 		if _, err := client.UploadJSON(data, fileName); err != nil {
 			fmt.Printf("❌ JSON upload failed: %v\n", err)
 		}
@@ -280,7 +279,7 @@ func main() {
 		}
 		text := os.Args[2]
 		fileName := os.Args[3]
-		
+
 		if _, err := client.UploadText(text, fileName); err != nil {
 			fmt.Printf("❌ Text upload failed: %v\n", err)
 		}
@@ -291,13 +290,13 @@ func main() {
 			return
 		}
 		filePath := os.Args[2]
-		
+
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			fmt.Printf("❌ Failed to read file: %v\n", err)
 			return
 		}
-		
+
 		fileName := filepath.Base(filePath)
 		if _, err := client.UploadBinary(data, fileName); err != nil {
 			fmt.Printf("❌ Binary upload failed: %v\n", err)
