@@ -1,3 +1,6 @@
 .vscode/*
 .ccls-cache/*
 .config/*
+.idea/*
+.vscode/*
+*.swp

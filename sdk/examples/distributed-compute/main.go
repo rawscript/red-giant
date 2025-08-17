@@ -10,10 +10,11 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"../go" // Import Red Giant SDK
+	"redgiant-sdk" // Import Red Giant SDK
 )
 
 type ComputeTask struct {
@@ -183,7 +184,7 @@ func runCoordinator(client *redgiant.Client) {
 
 		// Check for available workers and assign tasks
 		workers := findAvailableWorkers(client)
-		
+
 		for taskID, task := range taskQueue {
 			if task.Status == "pending" && len(workers) > 0 {
 				// Find best worker for this task
@@ -191,12 +192,12 @@ func runCoordinator(client *redgiant.Client) {
 				if worker != "" {
 					task.AssignedTo = worker
 					task.Status = "assigned"
-					
+
 					// Update task
 					if err := uploadTask(client, task); err == nil {
 						fmt.Printf("📤 Task assigned: %s -> %s\n", taskID, worker)
 						delete(taskQueue, taskID)
-						
+
 						// Remove worker from available list
 						for i, w := range workers {
 							if w == worker {
@@ -217,7 +218,7 @@ func runCoordinator(client *redgiant.Client) {
 					result, err := downloadAndParseResult(client, file.ID)
 					if err == nil {
 						completedTasks++
-						fmt.Printf("✅ Task completed: %s by %s (%.2f MB/s)\n", 
+						fmt.Printf("✅ Task completed: %s by %s (%.2f MB/s)\n",
 							result.TaskID, result.WorkerID, result.Performance.Throughput)
 					}
 				}
@@ -226,7 +227,7 @@ func runCoordinator(client *redgiant.Client) {
 
 		// Show status
 		if len(taskQueue) > 0 || completedTasks > 0 {
-			fmt.Printf("📊 Status: %d queued, %d completed, %d workers available\n\n", 
+			fmt.Printf("📊 Status: %d queued, %d completed, %d workers available\n\n",
 				len(taskQueue), completedTasks, len(workers))
 		}
 
@@ -271,17 +272,26 @@ func runWorker(client *redgiant.Client, args []string) {
 
 func (w *ComputeWorker) registerWorker() {
 	registration := map[string]interface{}{
-		"worker_id":  w.workerID,
-		"node_type":  w.nodeType,
-		"capacity":   w.capacity,
-		"status":     "available",
-		"timestamp":  time.Now(),
-		"peer_id":    w.client.PeerID,
+		"worker_id": w.workerID,
+		"node_type": w.nodeType,
+		"capacity":  w.capacity,
+		"status":    "available",
+		"timestamp": time.Now(),
+		"peer_id":   w.client.PeerID,
 	}
 
 	fileName := fmt.Sprintf("worker_registration_%s.json", w.workerID)
-	w.client.UploadJSON(registration, fileName)
-	
+	data, err := json.Marshal(registration)
+	if err != nil {
+		log.Printf("❌ Failed to marshal registration: %v", err)
+		return
+	}
+	_, err = w.client.UploadData(data, fileName)
+	if err != nil {
+		log.Printf("❌ Failed to upload registration: %v", err)
+		return
+	}
+
 	fmt.Printf("📝 Worker registered\n")
 }
 
@@ -333,7 +343,7 @@ func (w *ComputeWorker) processTask(task *ComputeTask) {
 	}()
 
 	start := time.Now()
-	
+
 	// Update task status
 	task.Status = "running"
 	task.Progress = 0.0
@@ -388,9 +398,17 @@ func (w *ComputeWorker) processTask(task *ComputeTask) {
 
 	// Upload result and updated task
 	uploadTask(w.client, task)
-	
+
 	resultFileName := fmt.Sprintf("compute_result_%s_%s.json", task.ID, w.workerID)
-	w.client.UploadJSON(computeResult, resultFileName)
+	resultData, err := json.Marshal(computeResult)
+	if err != nil {
+		log.Printf("❌ Failed to marshal result: %v", err)
+		return
+	}
+	_, err = w.client.UploadData(resultData, resultFileName)
+	if err != nil {
+		log.Printf("❌ Failed to upload result: %v", err)
+	}
 }
 
 func (w *ComputeWorker) calculatePiMonteCarlo(task *ComputeTask) (interface{}, error) {
@@ -405,7 +423,7 @@ func (w *ComputeWorker) calculatePiMonteCarlo(task *ComputeTask) (interface{}, e
 	for i := 0; i < n; i++ {
 		x := rand.Float64()
 		y := rand.Float64()
-		
+
 		if x*x+y*y <= 1.0 {
 			inside++
 		}
@@ -417,7 +435,7 @@ func (w *ComputeWorker) calculatePiMonteCarlo(task *ComputeTask) (interface{}, e
 	}
 
 	pi := 4.0 * float64(inside) / float64(n)
-	
+
 	return map[string]interface{}{
 		"pi_estimate": pi,
 		"iterations":  n,
@@ -432,17 +450,17 @@ func (w *ComputeWorker) matrixMultiply(task *ComputeTask) (interface{}, error) {
 	}
 
 	n := int(size)
-	
+
 	// Create random matrices
 	a := make([][]float64, n)
 	b := make([][]float64, n)
 	c := make([][]float64, n)
-	
+
 	for i := 0; i < n; i++ {
 		a[i] = make([]float64, n)
 		b[i] = make([]float64, n)
 		c[i] = make([]float64, n)
-		
+
 		for j := 0; j < n; j++ {
 			a[i][j] = rand.Float64()
 			b[i][j] = rand.Float64()
@@ -456,7 +474,7 @@ func (w *ComputeWorker) matrixMultiply(task *ComputeTask) (interface{}, error) {
 				c[i][j] += a[i][k] * b[k][j]
 			}
 		}
-		
+
 		// Update progress
 		task.Progress = float64(i) / float64(n) * 100
 	}
@@ -471,7 +489,7 @@ func (w *ComputeWorker) matrixMultiply(task *ComputeTask) (interface{}, error) {
 func (w *ComputeWorker) findPrimes(task *ComputeTask) (interface{}, error) {
 	start, ok1 := task.Parameters["start"].(float64)
 	end, ok2 := task.Parameters["end"].(float64)
-	
+
 	if !ok1 || !ok2 {
 		return nil, fmt.Errorf("invalid start/end parameters")
 	}
@@ -484,7 +502,7 @@ func (w *ComputeWorker) findPrimes(task *ComputeTask) (interface{}, error) {
 		if isPrime(num) {
 			primes = append(primes, num)
 		}
-		
+
 		// Update progress
 		if (num-startNum)%1000 == 0 {
 			task.Progress = float64(num-startNum) / float64(endNum-startNum) * 100
@@ -510,10 +528,10 @@ func (w *ComputeWorker) neuralTraining(task *ComputeTask) (interface{}, error) {
 	for epoch := 0; epoch < numEpochs; epoch++ {
 		// Simulate training step
 		loss *= 0.99 // Gradual loss reduction
-		
+
 		// Simulate computation time
 		time.Sleep(10 * time.Millisecond)
-		
+
 		// Update progress
 		task.Progress = float64(epoch) / float64(numEpochs) * 100
 	}
@@ -533,23 +551,23 @@ func (w *ComputeWorker) cryptoMining(task *ComputeTask) (interface{}, error) {
 
 	target := int(difficulty)
 	nonce := 0
-	
+
 	for {
 		// Simulate hash computation
 		hash := fmt.Sprintf("%x", rand.Uint64())
-		
+
 		// Check if hash meets difficulty
 		if countLeadingZeros(hash) >= target {
 			break
 		}
-		
+
 		nonce++
-		
+
 		// Update progress (arbitrary)
 		if nonce%1000 == 0 {
 			task.Progress = math.Min(float64(nonce)/10000*100, 99)
 		}
-		
+
 		// Prevent infinite loop
 		if nonce > 100000 {
 			break
@@ -565,7 +583,7 @@ func (w *ComputeWorker) cryptoMining(task *ComputeTask) (interface{}, error) {
 
 func submitTask(client *redgiant.Client, args []string) {
 	taskType := args[0]
-	
+
 	task := &ComputeTask{
 		ID:         fmt.Sprintf("task_%d", time.Now().UnixNano()),
 		Type:       taskType,
@@ -652,7 +670,7 @@ func monitorTasks(client *redgiant.Client) {
 			if err != nil {
 				continue
 			}
-			
+
 			tasks = append(tasks, task)
 			taskStats[task.Status]++
 		}
@@ -673,12 +691,12 @@ func monitorTasks(client *redgiant.Client) {
 				if i >= 5 {
 					break
 				}
-				
+
 				status := task.Status
 				if task.Status == "running" {
 					status = fmt.Sprintf("running (%.1f%%)", task.Progress)
 				}
-				
+
 				fmt.Printf("  • %s: %s [%s]\n", task.ID[:12], task.Type, status)
 			}
 
@@ -711,27 +729,27 @@ func simulateCluster(client *redgiant.Client, numWorkers, numTasks int) {
 		if i%3 == 0 {
 			nodeType = "gpu"
 		}
-		
+
 		go func(id, nType string) {
 			workerClient := redgiant.NewClient(client.BaseURL)
 			args := []string{id, nType, "2"}
 			runWorker(workerClient, args)
 		}(workerID, nodeType)
-		
+
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Submit tasks
 	time.Sleep(5 * time.Second)
-	
+
 	taskTypes := []string{"pi-monte-carlo", "matrix-multiply", "prime-search", "neural-training"}
-	
+
 	for i := 0; i < numTasks; i++ {
 		taskType := taskTypes[rand.Intn(len(taskTypes))]
-		
+
 		go func(tType string, index int) {
 			taskClient := redgiant.NewClient(client.BaseURL)
-			
+
 			var args []string
 			switch tType {
 			case "pi-monte-carlo":
@@ -744,10 +762,10 @@ func simulateCluster(client *redgiant.Client, numWorkers, numTasks int) {
 			case "neural-training":
 				args = []string{tType, strconv.Itoa(10 + rand.Intn(90))}
 			}
-			
+
 			submitTask(taskClient, args)
 		}(taskType, i)
-		
+
 		time.Sleep(time.Duration(500+rand.Intn(1500)) * time.Millisecond)
 	}
 
@@ -779,7 +797,7 @@ func benchmarkComputation(client *redgiant.Client, computationType string) {
 
 		taskClient := redgiant.NewClient(client.BaseURL)
 		submitTask(taskClient, args)
-		
+
 		// Extract task ID (simplified)
 		tasks[i] = fmt.Sprintf("task_%d", time.Now().UnixNano())
 	}
@@ -819,9 +837,18 @@ func downloadAndParseResult(client *redgiant.Client, fileID string) (*ComputeRes
 }
 
 func uploadTask(client *redgiant.Client, task *ComputeTask) error {
-	fileName := fmt.Sprintf("compute_task_%s.json", task.ID)
-	_, err := client.UploadJSON(task, fileName)
-	return err
+	data, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("failed to marshal task: %v", err)
+	}
+
+	filename := fmt.Sprintf("compute_task_%s.json", task.ID)
+	_, err = client.UploadData(data, filename)
+	if err != nil {
+		return fmt.Errorf("failed to upload task: %v", err)
+	}
+
+	return nil
 }
 
 func findAvailableWorkers(client *redgiant.Client) []string {
@@ -852,14 +879,14 @@ func selectBestWorker(workers []string, task *ComputeTask) string {
 	if len(workers) == 0 {
 		return ""
 	}
-	
+
 	// Simple selection - return first available worker
 	// In production, implement more sophisticated selection based on:
 	// - Worker capacity and current load
 	// - Node type (CPU vs GPU) matching task requirements
 	// - Historical performance
 	// - Network proximity
-	
+
 	return workers[0]
 }
 
@@ -873,13 +900,13 @@ func isPrime(n int) bool {
 	if n%2 == 0 {
 		return false
 	}
-	
+
 	for i := 3; i*i <= n; i += 2 {
 		if n%i == 0 {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -893,4 +920,47 @@ func countLeadingZeros(hash string) int {
 		}
 	}
 	return count
+}
+
+func downloadAndParseTask(client *redgiant.Client, fileID string) (*ComputeTask, error) {
+	data, err := client.DownloadData(fileID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download task: %v", err)
+	}
+
+	var task ComputeTask
+	if err := json.Unmarshal(data, &task); err != nil {
+		return nil, fmt.Errorf("failed to parse task: %v", err)
+	}
+
+	return &task, nil
+}
+
+func downloadAndParseResult(client *redgiant.Client, fileID string) (*ComputeResult, error) {
+	data, err := client.DownloadData(fileID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download result: %v", err)
+	}
+
+	var result ComputeResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse result: %v", err)
+	}
+
+	return &result, nil
+}
+
+func uploadTask(client *redgiant.Client, task *ComputeTask) error {
+	data, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("failed to marshal task: %v", err)
+	}
+
+	filename := fmt.Sprintf("compute_task_%s.json", task.ID)
+	_, err = client.UploadData(data, filename)
+	if err != nil {
+		return fmt.Errorf("failed to upload task: %v", err)
+	}
+
+	return nil
 }

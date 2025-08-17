@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"../go" // Import Red Giant SDK
+	"redgiant-sdk" // Import Red Giant SDK
 )
 
 func main() {

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"../go" // Import Red Giant SDK
+	"redgiant-sdk" // Import Red Giant SDK
 )
 
 type AIToken struct {
@@ -33,15 +33,15 @@ type TokenMeta struct {
 }
 
 type AIResponse struct {
-	SessionID    string    `json:"session_id"`
-	Prompt       string    `json:"prompt"`
-	Response     string    `json:"response"`
-	Tokens       []AIToken `json:"tokens"`
-	TotalTokens  int       `json:"total_tokens"`
-	StartTime    time.Time `json:"start_time"`
-	EndTime      time.Time `json:"end_time"`
-	Duration     string    `json:"duration"`
-	ModelName    string    `json:"model_name"`
+	SessionID   string    `json:"session_id"`
+	Prompt      string    `json:"prompt"`
+	Response    string    `json:"response"`
+	Tokens      []AIToken `json:"tokens"`
+	TotalTokens int       `json:"total_tokens"`
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time"`
+	Duration    string    `json:"duration"`
+	ModelName   string    `json:"model_name"`
 }
 
 type StreamingSession struct {
@@ -188,10 +188,10 @@ func (session *StreamingSession) processPrompt(prompt string) {
 
 	startTime := time.Now()
 	response := session.simulateAIResponse(prompt)
-	
+
 	// Stream tokens with Red Giant's high performance
 	tokens := session.tokenizeResponse(response)
-	
+
 	for i, token := range tokens {
 		// Create AI token
 		aiToken := AIToken{
@@ -210,7 +210,7 @@ func (session *StreamingSession) processPrompt(prompt string) {
 
 		// Stream token using Red Giant
 		session.streamToken(aiToken)
-		
+
 		// Display token
 		fmt.Print(token)
 		if !strings.HasSuffix(token, " ") && i < len(tokens)-1 {
@@ -241,7 +241,7 @@ func (session *StreamingSession) simulateAIResponse(prompt string) string {
 	}
 
 	baseResponse := responses[rand.Intn(len(responses))]
-	
+
 	// Add some additional content to make it more realistic
 	additions := []string{
 		" First, it's important to understand the fundamental principles involved.",
@@ -299,7 +299,7 @@ func (session *StreamingSession) streamToken(token AIToken) {
 
 	// Upload token using Red Giant's high-performance C core
 	filename := fmt.Sprintf("ai_token_%s_%d.json", token.SessionID, token.Position)
-	
+
 	_, err = session.client.UploadData(data, filename)
 	if err != nil {
 		log.Printf("❌ Failed to stream token: %v", err)
@@ -343,20 +343,20 @@ func simulateAI(client *redgiant.Client, modelName string, numSessions, tokensPe
 	// Start multiple streaming sessions
 	for i := 0; i < numSessions; i++ {
 		sessionID := fmt.Sprintf("sim_session_%s_%03d", modelName, i+1)
-		
+
 		go func(id string) {
 			sessionClient := redgiant.NewClient(client.BaseURL)
 			sessionClient.SetPeerID(fmt.Sprintf("ai_sim_%s", id))
-			
+
 			session := &StreamingSession{
 				client:    sessionClient,
 				sessionID: id,
 				modelName: modelName,
 				tokens:    make([]AIToken, 0),
 			}
-			
+
 			fmt.Printf("🚀 Started session: %s\n", id)
-			
+
 			// Simulate continuous AI responses
 			prompts := []string{
 				"Explain quantum computing",
@@ -365,15 +365,15 @@ func simulateAI(client *redgiant.Client, modelName string, numSessions, tokensPe
 				"Create a REST API",
 				"Optimize database queries",
 			}
-			
+
 			for {
 				prompt := prompts[rand.Intn(len(prompts))]
 				response := session.simulateAIResponse(prompt)
 				tokens := session.tokenizeResponse(response)
-				
+
 				// Stream tokens at specified rate
 				interval := time.Duration(1000/tokensPerSec) * time.Millisecond
-				
+
 				for i, token := range tokens {
 					aiToken := AIToken{
 						ID:        fmt.Sprintf("token_%s_%d", id, len(session.tokens)+i),
@@ -388,18 +388,18 @@ func simulateAI(client *redgiant.Client, modelName string, numSessions, tokensPe
 							Temperature: 0.7,
 						},
 					}
-					
+
 					session.streamToken(aiToken)
 					session.tokens = append(session.tokens, aiToken)
-					
+
 					time.Sleep(interval)
 				}
-				
+
 				// Pause between responses
 				time.Sleep(time.Duration(2+rand.Intn(5)) * time.Second)
 			}
 		}(sessionID)
-		
+
 		// Stagger session starts
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -451,13 +451,13 @@ func collectTokens(client *redgiant.Client, sessionID string) {
 
 		if newTokens > 0 {
 			fmt.Printf("📥 Collected %d new tokens\n", newTokens)
-			
+
 			// Reconstruct response from collected tokens
 			response := reconstructResponse(collectedTokens)
 			if response != "" {
 				fmt.Printf("📝 Current response: %s\n", response)
 			}
-			
+
 			fmt.Printf("📊 Total tokens collected: %d\n\n", len(collectedTokens))
 		}
 
@@ -538,14 +538,14 @@ func monitorStreams(client *redgiant.Client) {
 			}
 
 			fmt.Printf("\n📈 Total tokens streamed: %d\n", totalTokens)
-			
+
 			// Network performance
 			stats, err := client.GetNetworkStats()
 			if err == nil {
 				fmt.Printf("⚡ Network throughput: %.2f MB/s\n", stats.ThroughputMbps)
 				fmt.Printf("⏱️  Average latency: %d ms\n", stats.AverageLatency)
 			}
-			
+
 			fmt.Printf("==============================\n\n")
 		}
 
@@ -593,7 +593,7 @@ func benchmarkStreaming(client *redgiant.Client, tokensPerSec int) {
 			// Stream token
 			data, _ := json.Marshal(token)
 			filename := fmt.Sprintf("bench_token_%s_%d.json", sessionID, tokenCount)
-			
+
 			_, err := client.UploadData(data, filename)
 			if err != nil {
 				log.Printf("❌ Failed to stream token %d: %v", tokenCount, err)
@@ -605,7 +605,7 @@ func benchmarkStreaming(client *redgiant.Client, tokensPerSec int) {
 			if tokenCount%100 == 0 {
 				elapsed := time.Since(start)
 				actualRate := float64(tokenCount) / elapsed.Seconds()
-				fmt.Printf("📊 Progress: %d tokens, %.1f tokens/sec (target: %d)\n", 
+				fmt.Printf("📊 Progress: %d tokens, %.1f tokens/sec (target: %d)\n",
 					tokenCount, actualRate, tokensPerSec)
 			}
 

@@ -12,17 +12,17 @@ import (
 	"strconv"
 	"time"
 
-	"../go" // Import Red Giant SDK
+	"redgiant-sdk" // Import Red Giant SDK
 )
 
 type SensorReading struct {
-	DeviceID    string    `json:"device_id"`
-	SensorType  string    `json:"sensor_type"`
-	Value       float64   `json:"value"`
-	Unit        string    `json:"unit"`
-	Timestamp   time.Time `json:"timestamp"`
-	Location    Location  `json:"location"`
-	Metadata    Metadata  `json:"metadata"`
+	DeviceID   string    `json:"device_id"`
+	SensorType string    `json:"sensor_type"`
+	Value      float64   `json:"value"`
+	Unit       string    `json:"unit"`
+	Timestamp  time.Time `json:"timestamp"`
+	Location   Location  `json:"location"`
+	Metadata   Metadata  `json:"metadata"`
 }
 
 type Location struct {
@@ -32,9 +32,9 @@ type Location struct {
 }
 
 type Metadata struct {
-	BatteryLevel float64 `json:"battery_level"`
-	SignalStrength int   `json:"signal_strength"`
-	Firmware     string  `json:"firmware"`
+	BatteryLevel   float64 `json:"battery_level"`
+	SignalStrength int     `json:"signal_strength"`
+	Firmware       string  `json:"firmware"`
 }
 
 type SensorBatch struct {
@@ -46,12 +46,12 @@ type SensorBatch struct {
 }
 
 type IoTDevice struct {
-	client     *redgiant.Client
-	deviceID   string
-	location   Location
-	sensors    []string
-	batchSize  int
-	interval   time.Duration
+	client    *redgiant.Client
+	deviceID  string
+	location  Location
+	sensors   []string
+	batchSize int
+	interval  time.Duration
 }
 
 func main() {
@@ -152,7 +152,7 @@ func runDevice(client *redgiant.Client, args []string) {
 		client:   client,
 		deviceID: deviceID,
 		location: Location{
-			Latitude:  40.7128 + rand.Float64()*0.1,  // NYC area
+			Latitude:  40.7128 + rand.Float64()*0.1, // NYC area
 			Longitude: -74.0060 + rand.Float64()*0.1,
 			Altitude:  rand.Float64() * 100,
 		},
@@ -179,7 +179,7 @@ func (device *IoTDevice) startStreaming() {
 
 	for range ticker.C {
 		batch := device.generateBatch()
-		
+
 		// Serialize batch to JSON
 		data, err := json.Marshal(batch)
 		if err != nil {
@@ -189,7 +189,7 @@ func (device *IoTDevice) startStreaming() {
 
 		// Upload using Red Giant's high-performance C core
 		filename := fmt.Sprintf("iot_batch_%s_%d.json", device.deviceID, time.Now().UnixNano())
-		
+
 		start := time.Now()
 		result, err := device.client.UploadData(data, filename)
 		if err != nil {
@@ -213,10 +213,10 @@ func (device *IoTDevice) startStreaming() {
 
 func (device *IoTDevice) generateBatch() SensorBatch {
 	readings := make([]SensorReading, device.batchSize)
-	
+
 	for i := 0; i < device.batchSize; i++ {
 		sensorType := device.sensors[rand.Intn(len(device.sensors))]
-		
+
 		reading := SensorReading{
 			DeviceID:   device.deviceID,
 			SensorType: sensorType,
@@ -230,7 +230,7 @@ func (device *IoTDevice) generateBatch() SensorBatch {
 				Firmware:       "v1.2.3",
 			},
 		}
-		
+
 		readings[i] = reading
 	}
 
@@ -310,7 +310,7 @@ func runCollector(client *redgiant.Client) {
 
 				newBatches++
 				newReadings += batch.Count
-				
+
 				fmt.Printf("📥 Collected batch from %s: %d readings (%.2f MB)\n",
 					batch.DeviceID, batch.Count, float64(file.Size)/(1024*1024))
 			}
@@ -319,7 +319,7 @@ func runCollector(client *redgiant.Client) {
 		if newBatches > 0 {
 			totalBatches += newBatches
 			totalReadings += newReadings
-			
+
 			fmt.Printf("📊 Collection summary: %d new batches, %d new readings\n", newBatches, newReadings)
 			fmt.Printf("📈 Total collected: %d batches, %d readings\n\n", totalBatches, totalReadings)
 		}
@@ -375,7 +375,7 @@ func monitorDevice(client *redgiant.Client, deviceID string) {
 						readings[reading.SensorType] = make([]float64, 0)
 					}
 					readings[reading.SensorType] = append(readings[reading.SensorType], reading.Value)
-					
+
 					// Keep only last 100 readings per sensor
 					if len(readings[reading.SensorType]) > 100 {
 						readings[reading.SensorType] = readings[reading.SensorType][1:]
@@ -441,7 +441,7 @@ func runAnalytics(client *redgiant.Client) {
 					if _, exists := deviceStats[batch.DeviceID][reading.SensorType]; !exists {
 						deviceStats[batch.DeviceID][reading.SensorType] = make([]float64, 0)
 					}
-					
+
 					deviceStats[batch.DeviceID][reading.SensorType] = append(
 						deviceStats[batch.DeviceID][reading.SensorType], reading.Value)
 				}
@@ -460,20 +460,20 @@ func runAnalytics(client *redgiant.Client) {
 			for deviceID, sensors := range deviceStats {
 				deviceReadings := 0
 				fmt.Printf("\n🔌 Device: %s\n", deviceID)
-				
+
 				for sensorType, values := range sensors {
 					if len(values) > 0 {
 						avg := calculateAverage(values)
 						min := calculateMin(values)
 						max := calculateMax(values)
-						
+
 						fmt.Printf("   • %s: avg=%.2f, min=%.2f, max=%.2f (%d readings)\n",
 							sensorType, avg, min, max, len(values))
-						
+
 						deviceReadings += len(values)
 					}
 				}
-				
+
 				fmt.Printf("   Total readings: %d\n", deviceReadings)
 				totalReadings += deviceReadings
 			}
@@ -481,14 +481,14 @@ func runAnalytics(client *redgiant.Client) {
 			fmt.Printf("\n📈 Network Summary:\n")
 			fmt.Printf("   • Total readings: %d\n", totalReadings)
 			fmt.Printf("   • Average per device: %.1f\n", float64(totalReadings)/float64(len(deviceStats)))
-			
+
 			// Network performance
 			stats, err := client.GetNetworkStats()
 			if err == nil {
 				fmt.Printf("   • Network throughput: %.2f MB/s\n", stats.ThroughputMbps)
 				fmt.Printf("   • Average latency: %d ms\n", stats.AverageLatency)
 			}
-			
+
 			fmt.Printf("===============================\n\n")
 		}
 
@@ -502,11 +502,11 @@ func simulateNetwork(client *redgiant.Client, numDevices int) {
 	// Start multiple device simulators
 	for i := 0; i < numDevices; i++ {
 		deviceID := fmt.Sprintf("sim_device_%03d", i+1)
-		
+
 		go func(id string) {
 			deviceClient := redgiant.NewClient(client.BaseURL)
 			deviceClient.SetPeerID(fmt.Sprintf("iot_device_%s", id))
-			
+
 			device := &IoTDevice{
 				client:   deviceClient,
 				deviceID: id,
@@ -516,14 +516,14 @@ func simulateNetwork(client *redgiant.Client, numDevices int) {
 					Altitude:  rand.Float64() * 200,
 				},
 				sensors:   []string{"temperature", "humidity", "pressure", "light"},
-				batchSize: 5 + rand.Intn(10), // 5-15 readings per batch
+				batchSize: 5 + rand.Intn(10),                                      // 5-15 readings per batch
 				interval:  time.Duration(2000+rand.Intn(3000)) * time.Millisecond, // 2-5 seconds
 			}
-			
+
 			fmt.Printf("🔌 Started device: %s\n", id)
 			device.startStreaming()
 		}(deviceID)
-		
+
 		// Stagger device starts
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -536,7 +536,7 @@ func calculateAverage(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
-	
+
 	sum := 0.0
 	for _, v := range values {
 		sum += v
@@ -548,7 +548,7 @@ func calculateMin(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
-	
+
 	min := values[0]
 	for _, v := range values {
 		if v < min {
@@ -562,7 +562,7 @@ func calculateMax(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
-	
+
 	max := values[0]
 	for _, v := range values {
 		if v > max {

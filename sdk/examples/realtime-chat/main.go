@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"../go" // Import Red Giant SDK
+	"redgiant-sdk" // Import Red Giant SDK
 )
 
 type ChatMessage struct {
@@ -235,7 +235,7 @@ func (room *ChatRoom) sendMessage(message ChatMessage) {
 
 	// Show performance info for large messages
 	if len(data) > 1024 {
-		fmt.Printf("📊 Message sent: %d bytes in %v (%.2f MB/s)\n", 
+		fmt.Printf("📊 Message sent: %d bytes in %v (%.2f MB/s)\n",
 			len(data), sendTime, result.ThroughputMbps)
 	}
 }
