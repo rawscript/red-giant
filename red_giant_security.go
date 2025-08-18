@@ -161,14 +161,14 @@ func (ses *SecureExposureSurface) RetrieveChunkSecure(chunkID uint32, peerAuth s
 
 // Get performance metrics including security overhead
 func (ses *SecureExposureSurface) GetSecurityMetrics() map[string]interface{} {
-	var throughput uint32
+	var throughput C.uint32_t
 	elapsed := C.rg_get_performance_stats(ses.surface, &throughput)
 
 	return map[string]interface{}{
 		"encryption_enabled":     ses.encEnabled,
 		"authentication_enabled": len(ses.authKey) > 0,
-		"throughput_mbps":        throughput,
-		"elapsed_ms":             elapsed,
+		"throughput_mbps":        uint32(throughput),
+		"elapsed_ms":             uint64(elapsed),
 		"security_overhead":      "minimal", // AES-GCM adds ~5% overhead
 	}
 }
