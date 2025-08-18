@@ -31,6 +31,11 @@ import (
 	"unsafe"
 )
 
+type ChunkExposureTask struct {
+	ChunkID uint32
+	Data    []byte
+}
+
 // Adaptive processing modes based on content type and size
 type ProcessingMode int
 
@@ -176,13 +181,11 @@ type AdaptiveFile struct {
 
 // Adaptive Red Giant processor with format intelligence
 type AdaptiveProcessor struct {
-	config      *AdaptiveConfig
-	workerPool  chan struct{}
-	metrics     *AdaptiveMetrics
-	logger      *log.Logger
-	surface     *C.rg_exposure_surface_t
-	fileStorage map[string]*AdaptiveFile
-	storageMu   sync.RWMutex
+	config     *AdaptiveConfig
+	workerPool chan struct{}
+	metrics    *AdaptiveMetrics
+	logger     *log.Logger
+	surface    *C.rg_exposure_surface_t
 
 	// Streaming support
 	activeStreams map[string]*StreamSession
@@ -225,7 +228,6 @@ func NewAdaptiveProcessor(config *AdaptiveConfig) *AdaptiveProcessor {
 		metrics:       NewAdaptiveMetrics(),
 		logger:        log.New(os.Stdout, "[RedGiant-Adaptive] ", log.LstdFlags),
 		surface:       surface,
-		fileStorage:   make(map[string]*AdaptiveFile),
 		activeStreams: make(map[string]*StreamSession),
 	}
 
@@ -306,15 +308,13 @@ func (ap *AdaptiveProcessor) analyzeContent(data []byte, contentType string) *Co
 	return analyzer
 }
 
-// Adaptive high-performance processing with format optimization
+// ProcessDataAdaptive processes a complete in-memory byte slice.
+// It's refactored to use a more efficient worker pool pattern.
 func (ap *AdaptiveProcessor) ProcessDataAdaptive(data []byte, analyzer *ContentAnalyzer) (int, time.Duration, error) {
 	start := time.Now()
-
-	// Use optimal chunk size based on content analysis
 	chunkSize := analyzer.OptimalChunk
 	totalChunks := (len(data) + chunkSize - 1) / chunkSize
 
-	// Adaptive worker count based on content type and size
 	numWorkers := ap.config.MaxWorkers
 	if analyzer.ProcessMode == ModeStreaming || analyzer.IsStreamable {
 		numWorkers = min(numWorkers, 4) // Limit workers for streaming

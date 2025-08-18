@@ -1,8 +1,6 @@
-
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,30 +11,30 @@ import (
 )
 
 type TestResult struct {
-	Name        string  `json:"name"`
-	Status      string  `json:"status"`
-	Duration    int64   `json:"duration_ms"`
-	Throughput  float64 `json:"throughput_mbps"`
-	Error       string  `json:"error,omitempty"`
+	Name       string  `json:"name"`
+	Status     string  `json:"status"`
+	Duration   int64   `json:"duration_ms"`
+	Throughput float64 `json:"throughput_mbps"`
+	Error      string  `json:"error,omitempty"`
 }
 
 type TestSuite struct {
 	Results []TestResult `json:"results"`
 	Summary struct {
-		Total   int     `json:"total"`
-		Passed  int     `json:"passed"`
-		Failed  int     `json:"failed"`
-		Runtime int64   `json:"runtime_ms"`
+		Total   int   `json:"total"`
+		Passed  int   `json:"passed"`
+		Failed  int   `json:"failed"`
+		Runtime int64 `json:"runtime_ms"`
 	} `json:"summary"`
 }
 
 func main() {
 	fmt.Println("🧪 Red Giant Protocol - Comprehensive Test Suite")
 	fmt.Println("═══════════════════════════════════════════════════")
-	
+
 	suite := &TestSuite{}
 	startTime := time.Now()
-	
+
 	// Wait for server to be ready
 	fmt.Println("⏳ Waiting for server to be ready...")
 	if !waitForServer("http://localhost:8080", 30) {
@@ -45,39 +43,39 @@ func main() {
 		return
 	}
 	fmt.Println("✅ Server is ready")
-	
+
 	// Test 1: Health Check
 	result := testHealthCheck()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 2: Small File Upload
 	result = testSmallUpload()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 3: Large File Upload
 	result = testLargeUpload()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 4: JSON Processing
 	result = testJSONProcessing()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 5: Binary Data
 	result = testBinaryData()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 6: Concurrent Uploads
 	result = testConcurrentUploads()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 7: Metrics Endpoint
 	result = testMetrics()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Test 8: Performance Validation
 	result = testPerformance()
 	suite.Results = append(suite.Results, result)
-	
+
 	// Calculate summary
 	suite.Summary.Total = len(suite.Results)
 	suite.Summary.Runtime = time.Since(startTime).Milliseconds()
@@ -88,10 +86,10 @@ func main() {
 			suite.Summary.Failed++
 		}
 	}
-	
+
 	// Display results
 	displayResults(suite)
-	
+
 	// Save results to file
 	saveResults(suite)
 }
@@ -113,7 +111,7 @@ func waitForServer(url string, timeoutSec int) bool {
 
 func testHealthCheck() TestResult {
 	start := time.Now()
-	
+
 	resp, err := http.Get("http://localhost:8080/health")
 	if err != nil {
 		return TestResult{
@@ -124,7 +122,7 @@ func testHealthCheck() TestResult {
 		}
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return TestResult{
 			Name:     "Health Check",
@@ -133,7 +131,7 @@ func testHealthCheck() TestResult {
 			Error:    fmt.Sprintf("Status code: %d", resp.StatusCode),
 		}
 	}
-	
+
 	return TestResult{
 		Name:     "Health Check",
 		Status:   "PASS",
@@ -144,7 +142,7 @@ func testHealthCheck() TestResult {
 func testSmallUpload() TestResult {
 	start := time.Now()
 	data := "Red Giant Protocol Test Data - Small File"
-	
+
 	resp, err := uploadData(data, "small_test.txt")
 	if err != nil {
 		return TestResult{
@@ -154,9 +152,9 @@ func testSmallUpload() TestResult {
 			Error:    err.Error(),
 		}
 	}
-	
+
 	throughput := float64(len(data)) / time.Since(start).Seconds() / (1024 * 1024)
-	
+
 	return TestResult{
 		Name:       "Small File Upload",
 		Status:     "PASS",
@@ -168,7 +166,7 @@ func testSmallUpload() TestResult {
 func testLargeUpload() TestResult {
 	start := time.Now()
 	data := strings.Repeat("Red Giant Protocol Large Test Data. ", 10000) // ~370KB
-	
+
 	resp, err := uploadData(data, "large_test.txt")
 	if err != nil {
 		return TestResult{
@@ -178,9 +176,9 @@ func testLargeUpload() TestResult {
 			Error:    err.Error(),
 		}
 	}
-	
+
 	throughput := float64(len(data)) / time.Since(start).Seconds() / (1024 * 1024)
-	
+
 	return TestResult{
 		Name:       "Large File Upload",
 		Status:     "PASS",
@@ -201,7 +199,7 @@ func testJSONProcessing() TestResult {
 		},
 		"features": ["exposure-based", "c-core", "multi-format", "adaptive"]
 	}`
-	
+
 	resp, err := uploadDataWithContentType(jsonData, "test.json", "application/json")
 	if err != nil {
 		return TestResult{
@@ -211,9 +209,9 @@ func testJSONProcessing() TestResult {
 			Error:    err.Error(),
 		}
 	}
-	
+
 	throughput := float64(len(jsonData)) / time.Since(start).Seconds() / (1024 * 1024)
-	
+
 	return TestResult{
 		Name:       "JSON Processing",
 		Status:     "PASS",
@@ -224,17 +222,17 @@ func testJSONProcessing() TestResult {
 
 func testBinaryData() TestResult {
 	start := time.Now()
-	
+
 	// Create binary data
 	binaryData := make([]byte, 50000) // 50KB
-		for i := range binaryData {
-			binaryData[i] = byte(i % 256)
-		}
+	for i := range binaryData {
+		binaryData[i] = byte(i % 256)
+	}
 
-		dataSize := len(binaryData) // Capture the size here
+	dataSize := len(binaryData) // Capture the size here
 
-		resp, err := uploadDataWithContentType(string(binaryData), "binary_test.bin", "application/octet-stream")
-	
+	resp, err := uploadDataWithContentType(string(binaryData), "binary_test.bin", "application/octet-stream")
+
 	if err != nil {
 		return TestResult{
 			Name:     "Binary Data Processing",
@@ -243,9 +241,9 @@ func testBinaryData() TestResult {
 			Error:    err.Error(),
 		}
 	}
-	
+
 	throughput := float64(len(binaryData)) / time.Since(start).Seconds() / (1024 * 1024)
-	
+
 	return TestResult{
 		Name:       "Binary Data Processing",
 		Status:     "PASS",
@@ -255,64 +253,117 @@ func testBinaryData() TestResult {
 }
 
 func testConcurrentUploads() TestResult {
-    start := time.Now()
+	start := time.Now()
 
-    // Test 5 concurrent uploads
-    concurrency := 5
-    results := make(chan error, concurrency)
+	// Test 5 concurrent uploads
+	concurrency := 5
+	results := make(chan error, concurrency)
 
-    // Use a semaphore to limit concurrency
-    semaphore := make(chan struct{}, concurrency)
+	// Use a semaphore to limit concurrency
+	semaphore := make(chan struct{}, concurrency)
 
-    for i := 0; i < concurrency; i++ {
-        // Acquire semaphore
-        semaphore <- struct{}{}
+	for i := 0; i < concurrency; i++ {
+		// Acquire semaphore
+		semaphore <- struct{}{}
 
-        go func(id int) {
-            defer func() {
-                // Release semaphore
-                <-semaphore
-            }()
+		go func(id int) {
+			defer func() {
+				// Release semaphore
+				<-semaphore
+			}()
 
-            data := fmt.Sprintf("Concurrent test data from goroutine %d. %s", id, strings.Repeat("X", 1000))
-            _, err := uploadData(data, fmt.Sprintf("concurrent_%d.txt", id))
-            results <- err
-        }(i)
-    }
+			data := fmt.Sprintf("Concurrent test data from goroutine %d. %s", id, strings.Repeat("X", 1000))
+			_, err := uploadData(data, fmt.Sprintf("concurrent_%d.txt", id))
+			results <- err
+		}(i)
+	}
 
-    // Wait for all to complete
-    var failed int
-    for i := 0; i < concurrency; i++ {
-        if err := <-results; err != nil {
-            failed++
-        }
-    }
+	// Wait for all to complete
+	var failed int
+	for i := 0; i < concurrency; i++ {
+		if err := <-results; err != nil {
+			failed++
+		}
+	}
 
-    status := "PASS"
-    errorMsg := ""
-    if failed > 0 {
-        status = "FAIL"
-        errorMsg = fmt.Sprintf("%d out of %d uploads failed", failed, concurrency)
-    }
+	status := "PASS"
+	errorMsg := ""
+	if failed > 0 {
+		status = "FAIL"
+		errorMsg = fmt.Sprintf("%d out of %d uploads failed", failed, concurrency)
+	}
 
-    return TestResult{
-        Name:     "Concurrent Uploads",
-        Status:   status,
-        Duration: time.Since(start).Milliseconds(),
-        Error:    errorMsg,
-    }
+	return TestResult{
+		Name:     "Concurrent Uploads",
+		Status:   status,
+		Duration: time.Since(start).Milliseconds(),
+		Error:    errorMsg,
+	}
+}
+
+func testMetrics() TestResult {
+	start := time.Now()
+
+	resp, err := http.Get("http://localhost:8080/metrics")
+	if err != nil {
+		return TestResult{
+			Name:     "Metrics Endpoint",
+			Status:   "FAIL",
+			Duration: time.Since(start).Milliseconds(),
+			Error:    err.Error(),
+		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return TestResult{
+			Name:     "Metrics Endpoint",
+			Status:   "FAIL",
+			Duration: time.Since(start).Milliseconds(),
+			Error:    fmt.Sprintf("Status code: %d", resp.StatusCode),
+		}
+	}
+
+	// Read metrics data
+	metricsData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return TestResult{
+			Name:     "Metrics Endpoint",
+			Status:   "FAIL",
+			Duration: time.Since(start).Milliseconds(),
+			Error:    fmt.Sprintf("Failed to read metrics: %s", err.Error()),
+		}
+	}
+
+	// Validate metrics data contains expected keys
+	metricsStr := string(metricsData)
+	if !strings.Contains(metricsStr, "uploads_total") ||
+		!strings.Contains(metricsStr, "processing_time") {
+		return TestResult{
+			Name:     "Metrics Endpoint",
+			Status:   "FAIL",
+			Duration: time.Since(start).Milliseconds(),
+			Error:    "Metrics data missing required counters",
+		}
+	}
+
+	return TestResult{
+		Name:     "Metrics Endpoint",
+		Status:   "PASS",
+		Duration: time.Since(start).Milliseconds(),
+	}
 }
 
 func testPerformance() TestResult {
 	start := time.Now()
-	
+
 	// Upload a 1MB file and measure throughput
 	data := strings.Repeat("Performance test data for Red Giant Protocol. ", 20000) // ~1MB
-	
+
 	uploadStart := time.Now()
 	resp, err := uploadData(data, "performance_test.txt")
 	uploadTime := time.Since(uploadStart)
-	
+
 	if err != nil {
 		return TestResult{
 			Name:     "Performance Validation",
@@ -321,26 +372,26 @@ func testPerformance() TestResult {
 			Error:    err.Error(),
 		}
 	}
-	
+
 	throughput := float64(len(data)) / uploadTime.Seconds() / (1024 * 1024)
-	
+
 	// Validate performance criteria
 	status := "PASS"
 	errorMsg := ""
-	
-	if throughput < 50.0 { // Expect at least 50 MB/s for this test
-    status = "FAIL"
-    errorMsg = fmt.Sprintf("Throughput %.2f MB/s below threshold", throughput)
-}
 
-if uploadTime.Milliseconds() > 1000 { // Should complete within 1 second
-    if status == "FAIL" {
-        errorMsg += ", "
-    }
-    status = "FAIL"
-    errorMsg += fmt.Sprintf(" Upload took too long: %d ms", uploadTime.Milliseconds())
-}
-	
+	if throughput < 50.0 { // Expect at least 50 MB/s for this test
+		status = "FAIL"
+		errorMsg = fmt.Sprintf("Throughput %.2f MB/s below threshold", throughput)
+	}
+
+	if uploadTime.Milliseconds() > 1000 { // Should complete within 1 second
+		if status == "FAIL" {
+			errorMsg += ", "
+		}
+		status = "FAIL"
+		errorMsg += fmt.Sprintf(" Upload took too long: %d ms", uploadTime.Milliseconds())
+	}
+
 	return TestResult{
 		Name:       "Performance Validation",
 		Status:     status,
@@ -359,27 +410,27 @@ func uploadDataWithContentType(data, filename, contentType string) (map[string]i
 	if err != nil {
 		return nil, err
 	}
-	
+
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-File-Name", filename)
-	
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
-	
+
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	
+
 	return result, nil
 }
 
@@ -389,30 +440,29 @@ func displayResults(suite *TestSuite) {
 	fmt.Printf("Total Tests: %d | Passed: %d | Failed: %d | Runtime: %d ms\n",
 		suite.Summary.Total, suite.Summary.Passed, suite.Summary.Failed, suite.Summary.Runtime)
 	fmt.Println("═══════════════════════════════════════")
-	
+
 	for _, result := range suite.Results {
 		status := "✅"
-		if resp.StatusCode != 200 {
-    body, _ := io.ReadAll(resp.Body)
-    return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-}
-		
+		if result.Status != "PASS" {
+			status = "❌"
+		}
+
 		throughputStr := ""
 		if result.Throughput > 0 {
 			throughputStr = fmt.Sprintf(" | %.2f MB/s", result.Throughput)
 		}
-		
+
 		errorStr := ""
 		if result.Error != "" {
 			errorStr = fmt.Sprintf(" | Error: %s", result.Error)
 		}
-		
+
 		fmt.Printf("%s %-25s | %4d ms%s%s\n",
 			status, result.Name, result.Duration, throughputStr, errorStr)
 	}
-	
+
 	fmt.Println("═══════════════════════════════════════")
-	
+
 	if suite.Summary.Failed == 0 {
 		fmt.Println("🎉 All tests passed! Red Giant Protocol is ready for testing.")
 	} else {
