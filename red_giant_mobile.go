@@ -1,4 +1,3 @@
-
 // Red Giant Protocol - Mobile GSM/Cellular Network Adapter
 package main
 
@@ -9,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,44 +40,44 @@ type MobileProfile struct {
 
 // Mobile device characteristics
 type MobileDevice struct {
-	ID           string        `json:"id"`
-	Type         string        `json:"type"` // "smartphone", "tablet", "iot", "embedded"
-	NetworkType  NetworkType   `json:"network_type"`
-	BatteryLevel int           `json:"battery_level"`
-	SignalStrength int         `json:"signal_strength"`
-	Profile      MobileProfile `json:"profile"`
-	LastSeen     time.Time     `json:"last_seen"`
+	ID             string        `json:"id"`
+	Type           string        `json:"type"` // "smartphone", "tablet", "iot", "embedded"
+	NetworkType    NetworkType   `json:"network_type"`
+	BatteryLevel   int           `json:"battery_level"`
+	SignalStrength int           `json:"signal_strength"`
+	Profile        MobileProfile `json:"profile"`
+	LastSeen       time.Time     `json:"last_seen"`
 }
 
 // GSM/Cellular specific configuration
 type CellularConfig struct {
-	APN              string `json:"apn"`
-	NetworkOperator  string `json:"network_operator"`
-	CountryCode      string `json:"country_code"`
-	NetworkCode      string `json:"network_code"`
-	CellID           string `json:"cell_id"`
-	LAC              string `json:"lac"` // Location Area Code
-	EnableRoaming    bool   `json:"enable_roaming"`
-	PowerSaveMode    bool   `json:"power_save_mode"`
-	DataCompression  bool   `json:"data_compression"`
+	APN             string `json:"apn"`
+	NetworkOperator string `json:"network_operator"`
+	CountryCode     string `json:"country_code"`
+	NetworkCode     string `json:"network_code"`
+	CellID          string `json:"cell_id"`
+	LAC             string `json:"lac"` // Location Area Code
+	EnableRoaming   bool   `json:"enable_roaming"`
+	PowerSaveMode   bool   `json:"power_save_mode"`
+	DataCompression bool   `json:"data_compression"`
 }
 
 // Mobile Red Giant adapter
 type MobileRedGiantAdapter struct {
-	serverAddr     string
-	localPort      int
-	devices        map[string]*MobileDevice
-	cellular       *CellularConfig
-	profiles       map[NetworkType]*MobileProfile
-	devicesMu      sync.RWMutex
-	logger         *log.Logger
-	ctx            context.Context
-	cancel         context.CancelFunc
+	serverAddr string
+	localPort  int
+	devices    map[string]*MobileDevice
+	cellular   *CellularConfig
+	profiles   map[NetworkType]*MobileProfile
+	devicesMu  sync.RWMutex
+	logger     *log.Logger
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func NewMobileRedGiantAdapter(serverAddr string, localPort int) *MobileRedGiantAdapter {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	adapter := &MobileRedGiantAdapter{
 		serverAddr: serverAddr,
 		localPort:  localPort,
@@ -90,7 +88,7 @@ func NewMobileRedGiantAdapter(serverAddr string, localPort int) *MobileRedGiantA
 		profiles:   createMobileProfiles(),
 		cellular:   createDefaultCellularConfig(),
 	}
-	
+
 	adapter.logger.Printf("📱 Mobile Red Giant Adapter initialized")
 	return adapter
 }
@@ -100,36 +98,36 @@ func createMobileProfiles() map[NetworkType]*MobileProfile {
 	return map[NetworkType]*MobileProfile{
 		NetworkGSM: {
 			NetworkType:     NetworkGSM,
-			MaxBandwidth:    9600,        // 9.6 Kbps - Legacy only
-			Latency:         500,         // 500ms
-			ChunkSize:       1024,        // 1KB chunks
-			CompressionRate: 0.8,         // Aggressive compression
+			MaxBandwidth:    9600, // 9.6 Kbps - Legacy only
+			Latency:         500,  // 500ms
+			ChunkSize:       1024, // 1KB chunks
+			CompressionRate: 0.8,  // Aggressive compression
 			RetryAttempts:   5,
 			PowerOptimized:  true,
 		},
 		Network2G: {
 			NetworkType:     Network2G,
-			MaxBandwidth:    384000,      // 384 Kbps (EDGE max)
+			MaxBandwidth:    384000, // 384 Kbps (EDGE max)
 			Latency:         200,
-			ChunkSize:       8192,        // 8KB chunks
+			ChunkSize:       8192, // 8KB chunks
 			CompressionRate: 0.7,
 			RetryAttempts:   3,
 			PowerOptimized:  true,
 		},
 		Network3G: {
 			NetworkType:     Network3G,
-			MaxBandwidth:    42000000,    // 42 Mbps (HSPA+ real-world)
+			MaxBandwidth:    42000000, // 42 Mbps (HSPA+ real-world)
 			Latency:         80,
-			ChunkSize:       131072,      // 128KB chunks
+			ChunkSize:       131072, // 128KB chunks
 			CompressionRate: 0.5,
 			RetryAttempts:   2,
 			PowerOptimized:  false,
 		},
 		Network4G: {
 			NetworkType:     Network4G,
-			MaxBandwidth:    300000000,   // 300 Mbps (LTE-A real-world)
-			Latency:         30,          // Modern LTE latency
-			ChunkSize:       1048576,     // 1MB chunks - SAME AS DESKTOP
+			MaxBandwidth:    300000000, // 300 Mbps (LTE-A real-world)
+			Latency:         30,        // Modern LTE latency
+			ChunkSize:       1048576,   // 1MB chunks - SAME AS DESKTOP
 			CompressionRate: 0.3,
 			RetryAttempts:   2,
 			PowerOptimized:  false,
@@ -145,9 +143,9 @@ func createMobileProfiles() map[NetworkType]*MobileProfile {
 		},
 		NetworkWiFi: {
 			NetworkType:     NetworkWiFi,
-			MaxBandwidth:    1000000000,  // 1 Gbps (WiFi 6 on mobile)
+			MaxBandwidth:    1000000000, // 1 Gbps (WiFi 6 on mobile)
 			Latency:         10,
-			ChunkSize:       2097152,     // 2MB chunks
+			ChunkSize:       2097152, // 2MB chunks
 			CompressionRate: 0.2,
 			RetryAttempts:   1,
 			PowerOptimized:  false,
@@ -170,7 +168,7 @@ func createDefaultCellularConfig() *CellularConfig {
 func (mra *MobileRedGiantAdapter) detectNetworkType() NetworkType {
 	// In a real implementation, this would query system APIs
 	// For demo, we'll simulate based on environment variables
-	
+
 	if networkType := os.Getenv("MOBILE_NETWORK_TYPE"); networkType != "" {
 		switch strings.ToUpper(networkType) {
 		case "GSM":
@@ -187,7 +185,7 @@ func (mra *MobileRedGiantAdapter) detectNetworkType() NetworkType {
 			return NetworkWiFi
 		}
 	}
-	
+
 	// Default to 4G for demonstration
 	return Network4G
 }
@@ -196,7 +194,7 @@ func (mra *MobileRedGiantAdapter) detectNetworkType() NetworkType {
 func (mra *MobileRedGiantAdapter) RegisterDevice(deviceID, deviceType string) error {
 	networkType := mra.detectNetworkType()
 	profile := mra.profiles[networkType]
-	
+
 	device := &MobileDevice{
 		ID:             deviceID,
 		Type:           deviceType,
@@ -206,14 +204,14 @@ func (mra *MobileRedGiantAdapter) RegisterDevice(deviceID, deviceType string) er
 		Profile:        *profile,
 		LastSeen:       time.Now(),
 	}
-	
+
 	mra.devicesMu.Lock()
 	mra.devices[deviceID] = device
 	mra.devicesMu.Unlock()
-	
-	mra.logger.Printf("📱 Device registered: %s (%s) on %s network", 
+
+	mra.logger.Printf("📱 Device registered: %s (%s) on %s network",
 		deviceID, deviceType, mra.networkTypeString(networkType))
-	
+
 	return nil
 }
 
@@ -222,17 +220,17 @@ func (mra *MobileRedGiantAdapter) SendMobileData(deviceID string, data []byte, d
 	mra.devicesMu.RLock()
 	device, exists := mra.devices[deviceID]
 	mra.devicesMu.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("device %s not registered", deviceID)
 	}
-	
+
 	// Apply mobile optimizations
 	optimizedData, err := mra.optimizeForMobile(data, &device.Profile)
 	if err != nil {
 		return fmt.Errorf("failed to optimize data: %w", err)
 	}
-	
+
 	// Send data in optimized chunks
 	return mra.sendChunkedData(device, optimizedData, destination)
 }
@@ -246,13 +244,13 @@ func (mra *MobileRedGiantAdapter) optimizeForMobile(data []byte, profile *Mobile
 		if compressionSavings > 100 { // Only compress if we save significant bytes
 			compressedData := make([]byte, len(data)-compressionSavings)
 			copy(compressedData, data[:len(compressedData)])
-			
-			mra.logger.Printf("📦 Data compressed: %d -> %d bytes (%.1f%% savings)", 
+
+			mra.logger.Printf("📦 Data compressed: %d -> %d bytes (%.1f%% savings)",
 				len(data), len(compressedData), profile.CompressionRate*100)
 			return compressedData, nil
 		}
 	}
-	
+
 	return data, nil
 }
 
@@ -260,31 +258,31 @@ func (mra *MobileRedGiantAdapter) optimizeForMobile(data []byte, profile *Mobile
 func (mra *MobileRedGiantAdapter) sendChunkedData(device *MobileDevice, data []byte, destination string) error {
 	chunkSize := device.Profile.ChunkSize
 	totalChunks := (len(data) + chunkSize - 1) / chunkSize
-	
-	mra.logger.Printf("📤 Sending %d bytes in %d chunks of %d bytes each", 
+
+	mra.logger.Printf("📤 Sending %d bytes in %d chunks of %d bytes each",
 		len(data), totalChunks, chunkSize)
-	
+
 	for i := 0; i < totalChunks; i++ {
 		start := i * chunkSize
 		end := start + chunkSize
 		if end > len(data) {
 			end = len(data)
 		}
-		
+
 		chunk := data[start:end]
-		
+
 		// Send chunk with retries for mobile reliability
 		err := mra.sendChunkWithRetry(device, chunk, i, totalChunks, destination)
 		if err != nil {
 			return fmt.Errorf("failed to send chunk %d: %w", i, err)
 		}
-		
+
 		// Add delay for power optimization on slow networks
 		if device.Profile.PowerOptimized {
 			time.Sleep(time.Duration(device.Profile.Latency/10) * time.Millisecond)
 		}
 	}
-	
+
 	mra.logger.Printf("✅ Mobile transmission completed successfully")
 	return nil
 }
@@ -303,33 +301,33 @@ func (mra *MobileRedGiantAdapter) sendChunkWithRetry(device *MobileDevice, chunk
 			return fmt.Errorf("failed to connect after %d attempts: %w", device.Profile.RetryAttempts, err)
 		}
 		defer conn.Close()
-		
+
 		// Send chunk with mobile headers
 		header := fmt.Sprintf("RG-MOBILE-CHUNK:%d:%d:%s\n", chunkIndex, totalChunks, device.ID)
 		if _, err := conn.Write([]byte(header)); err != nil {
 			continue
 		}
-		
+
 		if _, err := conn.Write(chunk); err != nil {
 			continue
 		}
-		
+
 		// Success
 		return nil
 	}
-	
+
 	return fmt.Errorf("failed to send chunk after %d attempts", device.Profile.RetryAttempts)
 }
 
 // Monitor mobile network conditions
 func (mra *MobileRedGiantAdapter) MonitorMobileNetwork(duration time.Duration) {
 	mra.logger.Printf("📡 Starting mobile network monitoring for %v", duration)
-	
+
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	
+
 	startTime := time.Now()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -338,18 +336,18 @@ func (mra *MobileRedGiantAdapter) MonitorMobileNetwork(duration time.Duration) {
 				mra.logger.Printf("✅ Mobile network monitoring completed")
 				return
 			}
-			
+
 			// Update device network conditions
 			mra.updateNetworkConditions()
-			
+
 			// Log status
 			mra.devicesMu.RLock()
 			deviceCount := len(mra.devices)
 			mra.devicesMu.RUnlock()
-			
-			mra.logger.Printf("📊 Network Status: %d devices, %v elapsed", 
+
+			mra.logger.Printf("📊 Network Status: %d devices, %v elapsed",
 				deviceCount, elapsed.Round(time.Second))
-			
+
 		case <-mra.ctx.Done():
 			return
 		}
@@ -360,23 +358,23 @@ func (mra *MobileRedGiantAdapter) MonitorMobileNetwork(duration time.Duration) {
 func (mra *MobileRedGiantAdapter) updateNetworkConditions() {
 	mra.devicesMu.Lock()
 	defer mra.devicesMu.Unlock()
-	
+
 	for deviceID, device := range mra.devices {
 		// Simulate network condition changes
 		// In real implementation, this would query actual network APIs
-		
+
 		// Update signal strength (simulate)
 		if device.SignalStrength > 1 && time.Since(device.LastSeen) > 30*time.Second {
 			device.SignalStrength--
 		}
-		
+
 		// Update battery level (simulate drain)
 		if device.BatteryLevel > 0 {
 			device.BatteryLevel--
 		}
-		
+
 		device.LastSeen = time.Now()
-		
+
 		// Adapt profile based on conditions
 		if device.SignalStrength <= 2 || device.BatteryLevel <= 20 {
 			// Switch to power save mode
@@ -384,9 +382,9 @@ func (mra *MobileRedGiantAdapter) updateNetworkConditions() {
 			device.Profile.ChunkSize = min(device.Profile.ChunkSize, 4096)
 			device.Profile.CompressionRate = 0.8
 		}
-		
-		mra.logger.Printf("📱 %s: Signal=%d/5, Battery=%d%%, Network=%s", 
-			deviceID, device.SignalStrength, device.BatteryLevel, 
+
+		mra.logger.Printf("📱 %s: Signal=%d/5, Battery=%d%%, Network=%s",
+			deviceID, device.SignalStrength, device.BatteryLevel,
 			mra.networkTypeString(device.NetworkType))
 	}
 }
@@ -419,13 +417,13 @@ func (mra *MobileRedGiantAdapter) networkTypeString(networkType NetworkType) str
 func (mra *MobileRedGiantAdapter) GetMobileStats() map[string]interface{} {
 	mra.devicesMu.RLock()
 	defer mra.devicesMu.RUnlock()
-	
+
 	stats := map[string]interface{}{
-		"total_devices":    len(mra.devices),
-		"cellular_config":  mra.cellular,
-		"timestamp":        time.Now().Unix(),
+		"total_devices":   len(mra.devices),
+		"cellular_config": mra.cellular,
+		"timestamp":       time.Now().Unix(),
 	}
-	
+
 	// Count devices by network type
 	networkCounts := make(map[string]int)
 	for _, device := range mra.devices {
@@ -433,7 +431,7 @@ func (mra *MobileRedGiantAdapter) GetMobileStats() map[string]interface{} {
 		networkCounts[networkType]++
 	}
 	stats["devices_by_network"] = networkCounts
-	
+
 	return stats
 }
 
@@ -443,7 +441,7 @@ func (mra *MobileRedGiantAdapter) Shutdown() {
 	mra.cancel()
 }
 
-func min(a, b int) int {
+func Min(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -488,7 +486,7 @@ func main() {
 		}
 		deviceID := os.Args[2]
 		deviceType := os.Args[3]
-		
+
 		if err := adapter.RegisterDevice(deviceID, deviceType); err != nil {
 			fmt.Printf("❌ Registration failed: %v\n", err)
 		}
@@ -501,7 +499,7 @@ func main() {
 		deviceID := os.Args[2]
 		data := []byte(os.Args[3])
 		destination := os.Args[4]
-		
+
 		if err := adapter.SendMobileData(deviceID, data, destination); err != nil {
 			fmt.Printf("❌ Send failed: %v\n", err)
 		}

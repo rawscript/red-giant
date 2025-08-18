@@ -331,7 +331,7 @@ func testMetrics() TestResult {
 			Name:     "Metrics Endpoint",
 			Status:   "FAIL",
 			Duration: time.Since(start).Milliseconds(),
-			Error:    fmt.Sprintf("Failed to read metrics: %s", err.Error()),
+			Error:    fmt.Errorf("Failed to read metrics: %s", err.Error()),
 		}
 	}
 
@@ -453,7 +453,7 @@ func displayResults(suite *TestSuite) {
 		}
 
 		errorStr := ""
-		if result.Error != "" {
+		if result.Error != " " {
 			errorStr = fmt.Sprintf(" | Error: %s", result.Error)
 		}
 

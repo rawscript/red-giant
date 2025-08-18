@@ -1,4 +1,3 @@
-
 // Red Giant Protocol - Peer-to-Peer Client
 package main
 
@@ -20,10 +19,10 @@ type RedGiantPeer struct {
 }
 
 type FileInfo struct {
-	Name     string    `json:"name"`
-	Size     int64     `json:"size"`
-	Hash     string    `json:"hash"`
-	PeerID   string    `json:"peer_id"`
+	Name       string    `json:"name"`
+	Size       int64     `json:"size"`
+	Hash       string    `json:"hash"`
+	PeerID     string    `json:"peer_id"`
 	UploadedAt time.Time `json:"uploaded_at"`
 }
 
@@ -217,7 +216,8 @@ func (p *RedGiantPeer) SearchFiles(pattern string) (*FileListResponse, error) {
 	return &result, nil
 }
 
-func main() {
+// Main function to handle command line arguments and execute actions
+func Main() {
 	if len(os.Args) < 2 {
 		fmt.Println("🚀 Red Giant Protocol - Peer-to-Peer Client")
 		fmt.Println("Usage:")
@@ -320,7 +320,7 @@ func main() {
 		}
 		folder := os.Args[2]
 		fmt.Printf("📂 Sharing folder: %s\n", folder)
-		
+
 		err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -333,7 +333,7 @@ func main() {
 			}
 			return nil
 		})
-		
+
 		if err != nil {
 			fmt.Printf("❌ Share failed: %v\n", err)
 		} else {
