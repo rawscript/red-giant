@@ -807,49 +807,7 @@ func benchmarkComputation(client *redgiant.Client, computationType string) {
 	fmt.Printf("🔍 Monitor with: go run main.go monitor\n")
 }
 
-// Helper functions
-func downloadAndParseTask(client *redgiant.Client, fileID string) (*ComputeTask, error) {
-	data, err := client.DownloadData(fileID)
-	if err != nil {
-		return nil, err
-	}
-
-	var task ComputeTask
-	if err := json.Unmarshal(data, &task); err != nil {
-		return nil, err
-	}
-
-	return &task, nil
-}
-
-func downloadAndParseResult(client *redgiant.Client, fileID string) (*ComputeResult, error) {
-	data, err := client.DownloadData(fileID)
-	if err != nil {
-		return nil, err
-	}
-
-	var result ComputeResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-func uploadTask(client *redgiant.Client, task *ComputeTask) error {
-	data, err := json.Marshal(task)
-	if err != nil {
-		return fmt.Errorf("failed to marshal task: %v", err)
-	}
-
-	filename := fmt.Sprintf("compute_task_%s.json", task.ID)
-	_, err = client.UploadData(data, filename)
-	if err != nil {
-		return fmt.Errorf("failed to upload task: %v", err)
-	}
-
-	return nil
-}
+// Helper functions will be defined at the end of the file
 
 func findAvailableWorkers(client *redgiant.Client) []string {
 	files, err := client.SearchFiles("worker_registration_")
