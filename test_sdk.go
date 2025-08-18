@@ -1,3 +1,6 @@
+//go:build sdkdemo
+// +build sdkdemo
+
 // Red Giant Protocol - SDK Test Suite
 package main
 

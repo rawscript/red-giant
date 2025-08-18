@@ -128,7 +128,7 @@ func (lss *LiteSecureSurface) GenerateAuthToken() uint64 {
 
 // Performance metrics for lite security
 func (lss *LiteSecureSurface) GetLiteMetrics() map[string]interface{} {
-	var throughput uint32
+	var throughput C.uint32_t
 	elapsed := C.rg_get_performance_stats(lss.surface, &throughput)
 
 	return map[string]interface{}{

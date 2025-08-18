@@ -1,3 +1,6 @@
+//go:build universal
+// +build universal
+
 // Red Giant Protocol - Universal Client for All Formats
 package main
 

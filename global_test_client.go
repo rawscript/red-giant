@@ -1,3 +1,5 @@
+//go:build demo
+// +build demo
 
 // Global Red Giant Protocol Test Client
 package main
@@ -34,7 +36,7 @@ func main() {
 
 	serverURL := os.Args[1]
 	fmt.Printf("🚀 Starting global performance test against: %s\n", serverURL)
-	
+
 	// Get location info
 	location, country := getLocationInfo()
 	fmt.Printf("📍 Testing from: %s, %s\n\n", location, country)
@@ -104,60 +106,60 @@ func main() {
 func getLocationInfo() (string, string) {
 	// Try to get location from ipinfo.io
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	cityResp, err := client.Get("https://ipinfo.io/city")
 	if err != nil {
 		return "Unknown", "Unknown"
 	}
 	defer cityResp.Body.Close()
-	
+
 	countryResp, err := client.Get("https://ipinfo.io/country")
 	if err != nil {
 		return "Unknown", "Unknown"
 	}
 	defer countryResp.Body.Close()
-	
+
 	cityBytes, _ := io.ReadAll(cityResp.Body)
 	countryBytes, _ := io.ReadAll(countryResp.Body)
-	
+
 	city := string(bytes.TrimSpace(cityBytes))
 	country := string(bytes.TrimSpace(countryBytes))
-	
+
 	if city == "" {
 		city = "Unknown"
 	}
 	if country == "" {
 		country = "Unknown"
 	}
-	
+
 	return city, country
 }
 
 func testHealthCheck(serverURL string) time.Duration {
 	client := &http.Client{Timeout: 30 * time.Second}
-	
+
 	start := time.Now()
 	resp, err := client.Get(serverURL + "/health")
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		return 0
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return 0
 	}
-	
+
 	return duration
 }
 
 func testUploadPerformance(serverURL string) (float64, time.Duration) {
 	// Create 5MB test data
 	testData := bytes.Repeat([]byte("Red Giant Performance Test Data! "), 157286) // ~5MB
-	
+
 	client := &http.Client{Timeout: 60 * time.Second}
-	
+
 	start := time.Now()
 	resp, err := client.Post(
 		serverURL+"/upload",
@@ -165,53 +167,53 @@ func testUploadPerformance(serverURL string) (float64, time.Duration) {
 		bytes.NewReader(testData),
 	)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		return 0, 0
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return 0, 0
 	}
-	
+
 	// Calculate throughput in MB/s
 	sizeMB := float64(len(testData)) / (1024 * 1024)
 	speedMbps := sizeMB / duration.Seconds()
-	
+
 	return speedMbps, duration
 }
 
 func getServerMetrics(serverURL string) (float64, int64) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	
+
 	resp, err := client.Get(serverURL + "/metrics")
 	if err != nil {
 		return 0, 0
 	}
 	defer resp.Body.Close()
-	
+
 	var metrics map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
 		return 0, 0
 	}
-	
+
 	throughput, ok1 := metrics["throughput_mbps"].(float64)
 	avgLatency, ok2 := metrics["average_latency_ms"].(float64)
-	
+
 	if !ok1 {
 		throughput = 0
 	}
 	if !ok2 {
 		avgLatency = 0
 	}
-	
+
 	return throughput, int64(avgLatency)
 }
 
 func calculatePerformanceGrade(result *GlobalTestResult) string {
 	score := 0
-	
+
 	// Health check latency scoring
 	if result.HealthLatencyMs < 50 {
 		score += 25
@@ -222,7 +224,7 @@ func calculatePerformanceGrade(result *GlobalTestResult) string {
 	} else if result.HealthLatencyMs < 500 {
 		score += 10
 	}
-	
+
 	// Upload speed scoring
 	if result.UploadSpeedMbps > 400 {
 		score += 25
@@ -235,7 +237,7 @@ func calculatePerformanceGrade(result *GlobalTestResult) string {
 	} else if result.UploadSpeedMbps > 10 {
 		score += 5
 	}
-	
+
 	// Server throughput scoring
 	if result.ThroughputMbps > 500 {
 		score += 25
@@ -248,7 +250,7 @@ func calculatePerformanceGrade(result *GlobalTestResult) string {
 	} else if result.ThroughputMbps > 50 {
 		score += 5
 	}
-	
+
 	// Processing time scoring
 	if result.ProcessingTimeMs < 5 {
 		score += 25
@@ -261,10 +263,10 @@ func calculatePerformanceGrade(result *GlobalTestResult) string {
 	} else if result.ProcessingTimeMs < 100 {
 		score += 5
 	}
-	
+
 	// Error penalty
 	score -= result.ErrorCount * 10
-	
+
 	// Grade assignment
 	if score >= 90 {
 		return "A+ (Excellent Global Performance)"

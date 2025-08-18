@@ -1,3 +1,6 @@
+//go:build testadaptive
+// +build testadaptive
+
 // Red Giant Protocol - Adaptive Format Testing
 package main
 

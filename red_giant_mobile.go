@@ -1,3 +1,6 @@
+//go:build mobile
+// +build mobile
+
 // Red Giant Protocol - Mobile GSM/Cellular Network Adapter
 package main
 

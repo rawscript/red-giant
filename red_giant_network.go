@@ -1,3 +1,6 @@
+//go:build netcli
+// +build netcli
+
 // Red Giant Protocol - Network Discovery and Management
 package main
 
@@ -11,21 +14,21 @@ import (
 )
 
 type NetworkPeer struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Address      string    `json:"address"`
-	LastSeen     time.Time `json:"last_seen"`
-	FilesShared  int       `json:"files_shared"`
-	BytesShared  int64     `json:"bytes_shared"`
-	Status       string    `json:"status"` // "online", "offline", "busy"
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Address     string    `json:"address"`
+	LastSeen    time.Time `json:"last_seen"`
+	FilesShared int       `json:"files_shared"`
+	BytesShared int64     `json:"bytes_shared"`
+	Status      string    `json:"status"` // "online", "offline", "busy"
 }
 
 type NetworkStats struct {
-	TotalPeers      int     `json:"total_peers"`
-	OnlinePeers     int     `json:"online_peers"`
-	TotalFiles      int     `json:"total_files"`
-	TotalBytes      int64   `json:"total_bytes"`
-	NetworkUptime   int64   `json:"network_uptime"`
+	TotalPeers        int     `json:"total_peers"`
+	OnlinePeers       int     `json:"online_peers"`
+	TotalFiles        int     `json:"total_files"`
+	TotalBytes        int64   `json:"total_bytes"`
+	NetworkUptime     int64   `json:"network_uptime"`
 	AverageThroughput float64 `json:"average_throughput_mbps"`
 }
 
@@ -158,7 +161,7 @@ func (n *RedGiantNetwork) TestNetwork() error {
 	fmt.Printf("2. Upload Test... ")
 	testData := strings.Repeat("Red Giant Network Test Data! ", 1000) // ~30KB
 	start = time.Now()
-	
+
 	uploadResp, err := http.Post(n.ServerURL+"/process", "application/octet-stream", strings.NewReader(testData))
 	if err != nil {
 		fmt.Printf("❌ FAILED: %v\n", err)

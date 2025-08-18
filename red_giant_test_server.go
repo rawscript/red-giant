@@ -1,3 +1,6 @@
+//go:build testserver
+// +build testserver
+
 // Red Giant Protocol - Comprehensive Test Server
 package main
 

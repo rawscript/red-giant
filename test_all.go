@@ -1,3 +1,6 @@
+//go:build testall
+// +build testall
+
 package main
 
 import (

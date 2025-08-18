@@ -1,3 +1,6 @@
+//go:build chattui
+// +build chattui
+
 // Red Giant Protocol - P2P Chat System
 package main
 

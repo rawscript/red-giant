@@ -1,3 +1,6 @@
+//go:build chatdemo
+// +build chatdemo
+
 // Red Giant Protocol - Simple Chat Demo
 package main
 

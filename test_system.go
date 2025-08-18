@@ -1,3 +1,6 @@
+//go:build testsystem
+// +build testsystem
+
 // Red Giant Protocol - System Test
 package main
 
