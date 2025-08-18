@@ -7,7 +7,7 @@ package main
 /*
 #cgo CFLAGS: -std=gnu99 -O3 -march=native -D_GNU_SOURCE
 #include "red_giant.h"
-#include "red_giant_wrapper.c"
+#include "red_giant_wrapper.h"
 #cgo LDFLAGS: -lm
 */
 import "C"

@@ -1,3 +1,4 @@
+#ifdef RED_GIANT_C_DEMOS
 // Red Giant Protocol - Integration Test
 // Tests the complete workflow end-to-end
 
@@ -394,3 +395,4 @@ int main(int argc, char* argv[]) {
     
     return (test_state.tests_failed == 0) ? 0 : 1;
 }
+#endif

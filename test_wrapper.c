@@ -1,3 +1,4 @@
+#ifdef RED_GIANT_C_DEMOS
 // Red Giant Protocol - Wrapper Test Program
 // Demonstrates the complete workflow of the Red Giant Protocol
 
@@ -254,3 +255,4 @@ int main(int argc, char* argv[]) {
     printf("\n🎉 All tests completed!\n");
     return 0;
 }
+#endif

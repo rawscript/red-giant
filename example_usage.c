@@ -1,3 +1,4 @@
+#ifdef RED_GIANT_C_DEMOS
 // Red Giant Protocol - Usage Examples
 // Demonstrates various ways to use the Red Giant Protocol wrapper
 
@@ -421,3 +422,4 @@ int main(int argc, char* argv[]) {
     
     return 0;
 }
+#endif
