@@ -32,6 +32,20 @@ static void simple_hash(const unsigned char* data, size_t len, unsigned char* ha
     }
 }
 
+// Get current timestamp in nanoseconds
+static uint64_t get_timestamp_ns(void) {
+#ifdef _WIN32
+    LARGE_INTEGER frequency, counter;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return (uint64_t)((counter.QuadPart * 1000000000LL) / frequency.QuadPart);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#endif
+}
+
 // Reliable exposure with automatic retry and integrity checking
 typedef struct {
     uint32_t chunk_id;
