@@ -1,4 +1,3 @@
-#ifdef RED_GIANT_C_DEMOS
 // Red Giant Protocol - Integration Test
 // Tests the complete workflow end-to-end
 
@@ -391,8 +390,10 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    // Suppress unused parameter warning for argc
+    (void)argc;
+    
     run_all_tests(verbose);
     
     return (test_state.tests_failed == 0) ? 0 : 1;
 }
-#endif

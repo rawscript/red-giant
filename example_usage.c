@@ -1,4 +1,3 @@
-#ifdef RED_GIANT_C_DEMOS
 // Red Giant Protocol - Usage Examples
 // Demonstrates various ways to use the Red Giant Protocol wrapper
 
@@ -399,6 +398,10 @@ void print_overall_statistics() {
 }
 
 int main(int argc, char* argv[]) {
+    // Suppress unused parameter warnings
+    (void)argc;
+    (void)argv;
+    
     printf("🚀 Red Giant Protocol - Usage Examples\n");
     printf("Version: %s\n", rg_wrapper_get_version());
     printf("=======================================\n");
@@ -422,4 +425,3 @@ int main(int argc, char* argv[]) {
     
     return 0;
 }
-#endif

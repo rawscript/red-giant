@@ -14,8 +14,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Set compiler flags
-set CFLAGS=-std=c99 -Wall -Wextra -O3 -DNDEBUG
+REM Set compiler flags - More aggressive optimization for 500+ MB/s throughput
+set CFLAGS=-std=c99 -Wall -Wextra -O3 -march=native -mtune=native
+set CFLAGS=%CFLAGS% -ffast-math -funroll-loops -finline-functions -flto
+set CFLAGS=%CFLAGS% -DNDEBUG -fomit-frame-pointer
 set SOURCES=red_giant.c red_giant_reliable.c red_giant_wrapper.c
 
 echo.

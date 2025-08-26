@@ -2,8 +2,10 @@
 # Builds the C core and wrapper with proper optimization
 
 CC = gcc
+# More aggressive optimization flags for 500+ MB/s throughput
 CFLAGS = -std=c99 -Wall -Wextra -O3 -march=native -mtune=native
-CFLAGS += -ffast-math -funroll-loops -finline-functions
+CFLAGS += -ffast-math -funroll-loops -finline-functions -flto
+CFLAGS += -DNDEBUG -fomit-frame-pointer
 CFLAGS += -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
 
 # Platform-specific flags

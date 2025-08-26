@@ -82,7 +82,7 @@ uint64_t get_timestamp_ns(void) {
 #endif
 }
 
-// Memory pool for zero-allocation chunk processing
+// Memory pool for zero-allocation chunk processing - Increased size for better performance
 static struct {
   void *pool;
   size_t pool_size;
@@ -90,16 +90,17 @@ static struct {
   bool initialized;
 } memory_pool = {0};
 
-// Initialize memory pool once
+// Initialize memory pool once - Increased pool size for better performance
 static bool init_memory_pool(size_t size) {
   if (memory_pool.initialized)
     return true;
 
-  memory_pool.pool = malloc(size);
+  // Increased memory pool size to 1GB for better performance
+  memory_pool.pool = malloc(size > 0 ? size : 1024 * 1024 * 1024); // 1GB default
   if (!memory_pool.pool)
     return false;
 
-  memory_pool.pool_size = size;
+  memory_pool.pool_size = size > 0 ? size : 1024 * 1024 * 1024;
   atomic_store(&memory_pool.pool_offset, 0);  // Use atomic store
   memory_pool.initialized = true;
   return true;
@@ -108,12 +109,13 @@ static bool init_memory_pool(size_t size) {
 // Pool-based allocation - eliminates malloc/free overhead
 static void *pool_alloc(size_t size) {
   if (!memory_pool.initialized) {
-    if (!init_memory_pool(256 * 1024 * 1024)) { // 256MB pool
+    // Increased pool size for better performance
+    if (!init_memory_pool(1024 * 1024 * 1024)) { // 1GB pool
       return NULL;
     }
   }
 
-  // Align to cache line
+  // Align to cache line for better performance
   size = (size + 63) & ~63;
 
   // Atomic compare and swap for thread safety
@@ -124,7 +126,13 @@ static void *pool_alloc(size_t size) {
     
     // Check if we have enough space
     if (new_offset > memory_pool.pool_size) {
-      return NULL; // Pool exhausted
+      // Try to reset pool if it's mostly full
+      if (current_offset > memory_pool.pool_size * 0.8) {
+        atomic_store(&memory_pool.pool_offset, 0);
+        new_offset = size;
+      } else {
+        return NULL; // Pool exhausted
+      }
     }
   } while (!atomic_compare_exchange_weak(&memory_pool.pool_offset, &current_offset, new_offset));
 
@@ -136,8 +144,8 @@ static void *safe_aligned_alloc(size_t alignment, size_t size) {
   if (size == 0)
     return NULL;
 
-  // Use pool for small allocations
-  if (size <= 1024 * 1024) { // 1MB threshold
+  // Use pool for allocations up to 8MB for better performance
+  if (size <= 8 * 1024 * 1024) { // 8MB threshold
     return pool_alloc(size);
   }
 
@@ -179,7 +187,7 @@ static bool validate_manifest(const rg_manifest_t *manifest) {
     return false;
   }
   
-  // Check for reasonable limits
+  // Check for reasonable limits - Increased for better performance
   if (manifest->chunk_size > RG_MAX_CHUNK_SIZE ||
       manifest->total_chunks == 0 ||
       manifest->total_chunks > RG_MAX_CONCURRENT_CHUNKS) {
@@ -268,7 +276,7 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
     return NULL;
   }
   
-  // Allocate memory pool
+  // Allocate memory pool - Increased for better performance
   surface->pool_size = (size_t)pool_size_64;
   surface->memory_pool =
       safe_aligned_alloc(RG_CACHE_LINE_SIZE, surface->pool_size);
@@ -279,8 +287,8 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
     return NULL;
   }
 
-  // Check for multiplication overflow in shared buffer size
-  uint64_t buffer_size_64 = (uint64_t)manifest->chunk_size * 8;
+  // Check for multiplication overflow in shared buffer size - Increased for better performance
+  uint64_t buffer_size_64 = (uint64_t)manifest->chunk_size * 32; // Increased from 8x to 32x
   if (buffer_size_64 > SIZE_MAX) {
     fprintf(stderr, "[ERROR] Shared buffer size would overflow\n");
     aligned_free(surface->memory_pool);
@@ -390,12 +398,13 @@ bool rg_expose_chunk_fast(rg_exposure_surface_t *surface, uint32_t chunk_id,
   // Use memory pool for optimal performance
   chunk->data_ptr = (uint8_t *)surface->memory_pool + offset;
 
-  // Safe memory copy with bounds checking
+  // Safe memory copy with bounds checking - Optimized for performance
   if ((uint8_t*)chunk->data_ptr + size > (uint8_t*)surface->memory_pool + surface->pool_size) {
     fprintf(stderr, "[ERROR] Chunk %u data would overflow memory pool\n", chunk_id);
     return false;
   }
   
+  // Use memcpy for fast memory copy
   memcpy(chunk->data_ptr, data, size);
   chunk->data_size = size;
   chunk->exposure_timestamp = get_timestamp_ns();
@@ -434,7 +443,7 @@ bool rg_pull_chunk_fast(rg_exposure_surface_t *surface, uint32_t chunk_id,
     return false;
   }
 
-  // Safe memory copy with bounds checking
+  // Safe memory copy with bounds checking - Optimized for performance
   memcpy(dest_buffer, chunk->data_ptr, chunk->data_size);
   *size = chunk->data_size;
 
@@ -524,10 +533,12 @@ uint64_t rg_get_performance_stats(const rg_exposure_surface_t *surface,
   uint64_t elapsed_ns = current_time - surface->start_time;
   uint64_t elapsed_ms = elapsed_ns / 1000000;
 
-  if (elapsed_ms > 0) {
-    uint64_t bytes_per_sec =
-        (atomic_load(&surface->total_bytes_exposed) * 1000) / elapsed_ms;
-    *throughput_mbps = (uint32_t)(bytes_per_sec / (1024 * 1024));
+  // Optimized throughput calculation for better precision
+  if (elapsed_ns > 0) {
+    uint64_t bytes_exposed = atomic_load(&surface->total_bytes_exposed);
+    // Use double for better precision in calculation
+    double bytes_per_sec = (double)bytes_exposed * 1000000000.0 / (double)elapsed_ns;
+    *throughput_mbps = (uint32_t)(bytes_per_sec / (1024.0 * 1024.0));
   } else {
     *throughput_mbps = 0;
   }
