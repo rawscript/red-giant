@@ -129,13 +129,24 @@ func NewTestProcessor(config *TestConfig) *TestProcessor {
 		version:             C.uint32_t(1),
 	}
 
-	// Set file ID
+	// Set file ID safely - prevent buffer overflow
 	fileID := fmt.Sprintf("test_surface_%d", time.Now().Unix())
+	// Ensure we don't exceed the buffer size (64 bytes)
+	if len(fileID) >= 64 {
+		fileID = fileID[:63] // Leave space for null terminator
+	}
+
 	for i, b := range []byte(fileID) {
-		if i >= len(cManifest.file_id)-1 {
+		if i >= len(cManifest.file_id)-1 { // Leave space for null terminator
 			break
 		}
 		cManifest.file_id[i] = C.char(b)
+	}
+	// Ensure null termination
+	if len(fileID) < 64 {
+		cManifest.file_id[len(fileID)] = 0
+	} else {
+		cManifest.file_id[63] = 0
 	}
 
 	// Create surface with error checking

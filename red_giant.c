@@ -16,6 +16,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 // Platform-specific time handling
 #ifdef _WIN32
@@ -85,7 +86,7 @@ uint64_t get_timestamp_ns(void) {
 static struct {
   void *pool;
   size_t pool_size;
-  size_t pool_offset;
+  atomic_size_t pool_offset;  // Make this atomic for thread safety
   bool initialized;
 } memory_pool = {0};
 
@@ -99,7 +100,7 @@ static bool init_memory_pool(size_t size) {
     return false;
 
   memory_pool.pool_size = size;
-  memory_pool.pool_offset = 0;
+  atomic_store(&memory_pool.pool_offset, 0);  // Use atomic store
   memory_pool.initialized = true;
   return true;
 }
@@ -107,21 +108,27 @@ static bool init_memory_pool(size_t size) {
 // Pool-based allocation - eliminates malloc/free overhead
 static void *pool_alloc(size_t size) {
   if (!memory_pool.initialized) {
-    init_memory_pool(256 * 1024 * 1024); // 256MB pool
+    if (!init_memory_pool(256 * 1024 * 1024)) { // 256MB pool
+      return NULL;
+    }
   }
 
   // Align to cache line
   size = (size + 63) & ~63;
 
-  if (memory_pool.pool_offset + size <= memory_pool.pool_size) {
-    void *ptr = (char *)memory_pool.pool + memory_pool.pool_offset;
-    memory_pool.pool_offset += size;
-    return ptr;
-  }
+  // Atomic compare and swap for thread safety
+  size_t current_offset, new_offset;
+  do {
+    current_offset = atomic_load(&memory_pool.pool_offset);
+    new_offset = current_offset + size;
+    
+    // Check if we have enough space
+    if (new_offset > memory_pool.pool_size) {
+      return NULL; // Pool exhausted
+    }
+  } while (!atomic_compare_exchange_weak(&memory_pool.pool_offset, &current_offset, new_offset));
 
-  // Pool exhausted, reset (simple strategy)
-  fprintf(stderr, "[ERROR] Memory pool exhausted, allocation failed\n");
-  return NULL;
+  return (char *)memory_pool.pool + current_offset;
 }
 
 // Safe aligned allocation with pool optimization
@@ -167,10 +174,30 @@ static void *safe_aligned_alloc(size_t alignment, size_t size) {
 
 // Validate manifest parameters
 static bool validate_manifest(const rg_manifest_t *manifest) {
-  return manifest && manifest->total_size > 0 && manifest->chunk_size > 0 &&
-         manifest->chunk_size <= RG_MAX_CHUNK_SIZE &&
-         manifest->total_chunks > 0 &&
-         manifest->total_chunks <= RG_MAX_CONCURRENT_CHUNKS;
+  // Check for potential integer overflow
+  if (!manifest || manifest->total_size == 0 || manifest->chunk_size == 0) {
+    return false;
+  }
+  
+  // Check for reasonable limits
+  if (manifest->chunk_size > RG_MAX_CHUNK_SIZE ||
+      manifest->total_chunks == 0 ||
+      manifest->total_chunks > RG_MAX_CONCURRENT_CHUNKS) {
+    return false;
+  }
+  
+  // Check for multiplication overflow in total_size calculation
+  if (manifest->total_chunks > UINT64_MAX / manifest->chunk_size) {
+    return false;
+  }
+  
+  // Verify that total_size is consistent with chunks
+  uint64_t calculated_size = (uint64_t)manifest->total_chunks * manifest->chunk_size;
+  if (manifest->total_size > calculated_size) {
+    return false;
+  }
+  
+  return true;
 }
 
 rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
@@ -189,6 +216,13 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   memset(surface, 0, sizeof(rg_exposure_surface_t));
   memcpy(&surface->manifest, manifest, sizeof(rg_manifest_t));
 
+  // Check for multiplication overflow
+  if (manifest->total_chunks > SIZE_MAX / sizeof(rg_chunk_t)) {
+    fprintf(stderr, "[ERROR] Chunk array size would overflow\n");
+    aligned_free(surface);
+    return NULL;
+  }
+  
   // Allocate chunks array
   size_t chunks_size = manifest->total_chunks * sizeof(rg_chunk_t);
   surface->chunks = safe_aligned_alloc(RG_CACHE_LINE_SIZE, chunks_size);
@@ -203,16 +237,34 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   for (uint32_t i = 0; i < manifest->total_chunks; i++) {
     surface->chunks[i].sequence_id = i;
     surface->chunks[i].offset = (uint64_t)i * manifest->chunk_size;
-    surface->chunks[i].data_size =
-        (i == manifest->total_chunks - 1)
-            ? (uint32_t)(manifest->total_size % manifest->chunk_size == 0
-                             ? manifest->chunk_size
-                             : manifest->total_size % manifest->chunk_size)
-            : manifest->chunk_size;
+    
+    // Calculate data size for this chunk
+    uint64_t chunk_start = (uint64_t)i * manifest->chunk_size;
+    uint64_t chunk_end = chunk_start + manifest->chunk_size;
+    
+    // For the last chunk, adjust size if it's smaller
+    if (i == manifest->total_chunks - 1) {
+      if (manifest->total_size < chunk_end) {
+        surface->chunks[i].data_size = (uint32_t)(manifest->total_size - chunk_start);
+      } else {
+        surface->chunks[i].data_size = manifest->chunk_size;
+      }
+    } else {
+      surface->chunks[i].data_size = manifest->chunk_size;
+    }
+    
     atomic_store(&surface->chunks[i].is_exposed, false);
     surface->chunks[i].pull_count = 0;
   }
 
+  // Check for multiplication overflow in memory pool size
+  if (manifest->total_chunks > SIZE_MAX / manifest->chunk_size) {
+    fprintf(stderr, "[ERROR] Memory pool size would overflow\n");
+    aligned_free(surface->chunks);
+    aligned_free(surface);
+    return NULL;
+  }
+  
   // Allocate memory pool
   surface->pool_size = manifest->total_chunks * manifest->chunk_size;
   surface->memory_pool =
@@ -224,6 +276,15 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
     return NULL;
   }
 
+  // Check for multiplication overflow in shared buffer size
+  if (manifest->chunk_size > SIZE_MAX / 8) {
+    fprintf(stderr, "[ERROR] Shared buffer size would overflow\n");
+    aligned_free(surface->memory_pool);
+    aligned_free(surface->chunks);
+    aligned_free(surface);
+    return NULL;
+  }
+  
   // Allocate shared buffer
   surface->buffer_size = manifest->chunk_size * 8;
   surface->shared_buffer =
@@ -236,6 +297,16 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
     return NULL;
   }
 
+  // Check for multiplication overflow in free slots allocation
+  if (manifest->total_chunks > SIZE_MAX / sizeof(uint32_t)) {
+    fprintf(stderr, "[ERROR] Free slots array size would overflow\n");
+    aligned_free(surface->shared_buffer);
+    aligned_free(surface->memory_pool);
+    aligned_free(surface->chunks);
+    aligned_free(surface);
+    return NULL;
+  }
+  
   // Initialize free slot tracking
   surface->free_slots = malloc(manifest->total_chunks * sizeof(uint32_t));
   if (!surface->free_slots) {
@@ -284,6 +355,11 @@ bool rg_expose_chunk_fast(rg_exposure_surface_t *surface, uint32_t chunk_id,
     return false;
   }
 
+  // Additional validation
+  if (!surface->chunks || !surface->memory_pool) {
+    return false;
+  }
+
   rg_chunk_t *chunk = &surface->chunks[chunk_id];
 
   // Check if already exposed
@@ -298,11 +374,22 @@ bool rg_expose_chunk_fast(rg_exposure_surface_t *surface, uint32_t chunk_id,
     return false;
   }
 
-  // Use memory pool for optimal performance
-  chunk->data_ptr = (uint8_t *)surface->memory_pool +
-                    ((uint64_t)chunk_id * surface->manifest.chunk_size);
+  // Check that we won't overflow when calculating the data pointer
+  uint64_t offset = (uint64_t)chunk_id * surface->manifest.chunk_size;
+  if (offset > surface->pool_size || size > surface->pool_size - offset) {
+    fprintf(stderr, "[ERROR] Chunk %u would overflow memory pool\n", chunk_id);
+    return false;
+  }
 
-  // Safe memory copy
+  // Use memory pool for optimal performance
+  chunk->data_ptr = (uint8_t *)surface->memory_pool + offset;
+
+  // Safe memory copy with bounds checking
+  if ((uint8_t*)chunk->data_ptr + size > (uint8_t*)surface->memory_pool + surface->pool_size) {
+    fprintf(stderr, "[ERROR] Chunk %u data would overflow memory pool\n", chunk_id);
+    return false;
+  }
+  
   memcpy(chunk->data_ptr, data, size);
   chunk->data_size = size;
   chunk->exposure_timestamp = get_timestamp_ns();
@@ -336,7 +423,12 @@ bool rg_pull_chunk_fast(rg_exposure_surface_t *surface, uint32_t chunk_id,
     return false;
   }
 
-  // Safe memory copy
+  // Validate that we won't overflow the destination buffer
+  if (chunk->data_size == 0 || chunk->data_ptr == NULL) {
+    return false;
+  }
+
+  // Safe memory copy with bounds checking
   memcpy(dest_buffer, chunk->data_ptr, chunk->data_size);
   *size = chunk->data_size;
 
@@ -370,6 +462,11 @@ uint32_t rg_expose_batch(rg_exposure_surface_t *surface, uint32_t start_chunk,
     return 0;
   }
 
+  // Validate that we won't overflow
+  if (count > surface->manifest.total_chunks || start_chunk > surface->manifest.total_chunks - count) {
+    return 0;
+  }
+
   uint32_t exposed = 0;
   for (uint32_t i = 0; i < count; i++) {
     if (data_ptrs[i] && rg_expose_chunk_fast(surface, start_chunk + i,
@@ -385,6 +482,11 @@ uint32_t rg_pull_batch(rg_exposure_surface_t *surface, uint32_t start_chunk,
                        uint32_t count, void **dest_buffers, uint32_t *sizes) {
   if (!surface || !dest_buffers || !sizes ||
       start_chunk + count > surface->manifest.total_chunks) {
+    return 0;
+  }
+
+  // Validate that we won't overflow
+  if (count > surface->manifest.total_chunks || start_chunk > surface->manifest.total_chunks - count) {
     return 0;
   }
 

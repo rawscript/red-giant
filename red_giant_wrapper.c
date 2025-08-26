@@ -341,10 +341,15 @@ void rg_wrapper_get_stats(rg_file_context_t* context,
     if (elapsed_ms) *elapsed_ms = elapsed_ns / 1000000;  // Convert to milliseconds
     
     if (throughput_mbps && elapsed_ns > 0) {
-        uint64_t bytes_processed = (uint64_t)context->processed_chunks * context->chunk_size;
-        double elapsed_seconds = elapsed_ns / 1000000000.0;
-        double throughput_bytes_per_sec = bytes_processed / elapsed_seconds;
+      uint64_t bytes_processed = (uint64_t)context->processed_chunks * context->chunk_size;
+      // Avoid division by zero
+      if (elapsed_ns > 0) {
+        double elapsed_seconds = (double)elapsed_ns / 1000000000.0;
+        double throughput_bytes_per_sec = (double)bytes_processed / elapsed_seconds;
         *throughput_mbps = (uint32_t)(throughput_bytes_per_sec / (1024 * 1024));
+      } else {
+        *throughput_mbps = 0;
+      }
     } else if (throughput_mbps) {
         *throughput_mbps = 0;
     }

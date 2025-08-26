@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <sys/types.h>
+#include <stddef.h>  // Add this for size_t
 
 #ifdef __cplusplus
 extern "C" {

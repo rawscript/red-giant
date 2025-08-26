@@ -39,36 +39,48 @@ void log_callback(const char* level, const char* message) {
 
 // Create a test file
 bool create_test_file(const char* filename, size_t size_mb) {
-    FILE* file = fopen(filename, "wb");
-    if (!file) {
-        printf("Failed to create test file: %s\n", filename);
-        return false;
-    }
-    
-    printf("Creating test file: %s (%.1f MB)\n", filename, (double)size_mb);
-    
-    // Write test data
-    char buffer[4096];
-    for (int i = 0; i < 4096; i++) {
-        buffer[i] = (char)(i % 256);
-    }
-    
-    size_t total_bytes = size_mb * 1024 * 1024;
-    size_t bytes_written = 0;
-    
-    while (bytes_written < total_bytes) {
-        size_t to_write = (total_bytes - bytes_written > 4096) ? 4096 : (total_bytes - bytes_written);
-        if (fwrite(buffer, 1, to_write, file) != to_write) {
-            printf("Failed to write test data\n");
-            fclose(file);
-            return false;
-        }
-        bytes_written += to_write;
-    }
-    
+  FILE* file = fopen(filename, "wb");
+  if (!file) {
+    printf("Failed to create test file: %s\n", filename);
+    return false;
+  }
+  
+  printf("Creating test file: %s (%.1f MB)\n", filename, (double)size_mb);
+  
+  // Write test data
+  char buffer[4096];
+  for (int i = 0; i < 4096; i++) {
+    buffer[i] = (char)(i % 256);
+  }
+  
+  size_t total_bytes = size_mb * 1024 * 1024;
+  size_t bytes_written = 0;
+  
+  // Check for potential overflow
+  if (size_mb > SIZE_MAX / (1024 * 1024)) {
+    printf("File size too large\n");
     fclose(file);
-    printf("Test file created successfully\n");
-    return true;
+    return false;
+  }
+  
+  while (bytes_written < total_bytes) {
+    size_t to_write = (total_bytes - bytes_written > 4096) ? 4096 : (total_bytes - bytes_written);
+    size_t written = fwrite(buffer, 1, to_write, file);
+    if (written != to_write) {
+      printf("Failed to write test data\n");
+      fclose(file);
+      return false;
+    }
+    bytes_written += written;
+  }
+  
+  if (fclose(file) != 0) {
+    printf("Failed to close test file\n");
+    return false;
+  }
+  
+  printf("Test file created successfully\n");
+  return true;
 }
 
 // Test basic file transmission
