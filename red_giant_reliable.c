@@ -287,24 +287,24 @@ void rg_recover_failed_chunks(rg_reliable_surface_t* reliable) {
         // Wait before next retry
         struct timespec delay = {
             .tv_sec = 0,
-            .tv_nsec = reliable->retry_interval_ns
+            .tv_nsec = (long)reliable->retry_interval_ns  // Cast to long to match field type
         };
         
         // Check for overflow in exponential backoff calculation
-        if (attempt < 32 && delay.tv_nsec <= UINT64_MAX >> attempt) {
+        if (attempt < 32 && delay.tv_nsec <= (long long)(UINT64_MAX >> attempt)) {
           delay.tv_nsec *= (1 << attempt);
         } else {
-          delay.tv_nsec = reliable->retry_interval_ns * 10; // Cap the delay
+          delay.tv_nsec = (long)(reliable->retry_interval_ns * 10); // Cap the delay
         }
         
         struct timespec remaining;
         while (nanosleep(&delay, &remaining) == -1) {
-          if (errno == EINTR) {
-            delay = remaining;  // Continue with remaining time
-          } else {
-            perror("nanosleep");
-            break;
-          }
+            if (errno == EINTR) {
+                delay = remaining;  // Continue with remaining time
+            } else {
+                perror("nanosleep");
+                break;
+            }
         }
       }
       

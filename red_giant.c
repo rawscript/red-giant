@@ -216,15 +216,17 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   memset(surface, 0, sizeof(rg_exposure_surface_t));
   memcpy(&surface->manifest, manifest, sizeof(rg_manifest_t));
 
-  // Check for multiplication overflow
-  if (manifest->total_chunks > SIZE_MAX / sizeof(rg_chunk_t)) {
+  // Check for multiplication overflow using a more appropriate approach
+  // We cast to uint64_t to avoid the warning and still perform the check
+  uint64_t chunks_size_64 = (uint64_t)manifest->total_chunks * sizeof(rg_chunk_t);
+  if (chunks_size_64 > SIZE_MAX) {
     fprintf(stderr, "[ERROR] Chunk array size would overflow\n");
     aligned_free(surface);
     return NULL;
   }
   
   // Allocate chunks array
-  size_t chunks_size = manifest->total_chunks * sizeof(rg_chunk_t);
+  size_t chunks_size = (size_t)chunks_size_64;
   surface->chunks = safe_aligned_alloc(RG_CACHE_LINE_SIZE, chunks_size);
   if (!surface->chunks) {
     fprintf(stderr, "[ERROR] Failed to allocate chunks memory\n");
@@ -258,7 +260,8 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   }
 
   // Check for multiplication overflow in memory pool size
-  if (manifest->total_chunks > SIZE_MAX / manifest->chunk_size) {
+  uint64_t pool_size_64 = (uint64_t)manifest->total_chunks * manifest->chunk_size;
+  if (pool_size_64 > SIZE_MAX) {
     fprintf(stderr, "[ERROR] Memory pool size would overflow\n");
     aligned_free(surface->chunks);
     aligned_free(surface);
@@ -266,7 +269,7 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   }
   
   // Allocate memory pool
-  surface->pool_size = manifest->total_chunks * manifest->chunk_size;
+  surface->pool_size = (size_t)pool_size_64;
   surface->memory_pool =
       safe_aligned_alloc(RG_CACHE_LINE_SIZE, surface->pool_size);
   if (!surface->memory_pool) {
@@ -277,7 +280,8 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   }
 
   // Check for multiplication overflow in shared buffer size
-  if (manifest->chunk_size > SIZE_MAX / 8) {
+  uint64_t buffer_size_64 = (uint64_t)manifest->chunk_size * 8;
+  if (buffer_size_64 > SIZE_MAX) {
     fprintf(stderr, "[ERROR] Shared buffer size would overflow\n");
     aligned_free(surface->memory_pool);
     aligned_free(surface->chunks);
@@ -286,7 +290,7 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   }
   
   // Allocate shared buffer
-  surface->buffer_size = manifest->chunk_size * 8;
+  surface->buffer_size = (size_t)buffer_size_64;
   surface->shared_buffer =
       safe_aligned_alloc(RG_CACHE_LINE_SIZE, surface->buffer_size);
   if (!surface->shared_buffer) {
@@ -298,7 +302,8 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   }
 
   // Check for multiplication overflow in free slots allocation
-  if (manifest->total_chunks > SIZE_MAX / sizeof(uint32_t)) {
+  uint64_t free_slots_size_64 = (uint64_t)manifest->total_chunks * sizeof(uint32_t);
+  if (free_slots_size_64 > SIZE_MAX) {
     fprintf(stderr, "[ERROR] Free slots array size would overflow\n");
     aligned_free(surface->shared_buffer);
     aligned_free(surface->memory_pool);
@@ -308,7 +313,8 @@ rg_exposure_surface_t *rg_create_surface(const rg_manifest_t *manifest) {
   }
   
   // Initialize free slot tracking
-  surface->free_slots = malloc(manifest->total_chunks * sizeof(uint32_t));
+  size_t free_slots_size = (size_t)free_slots_size_64;
+  surface->free_slots = malloc(free_slots_size);
   if (!surface->free_slots) {
     fprintf(stderr, "[ERROR] Failed to allocate free slots tracking\n");
     aligned_free(surface->shared_buffer);

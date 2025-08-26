@@ -1,4 +1,3 @@
-#ifdef RED_GIANT_C_DEMOS
 // Red Giant Protocol - Wrapper Test Program
 // Demonstrates the complete workflow of the Red Giant Protocol
 
@@ -235,6 +234,10 @@ void test_reliability_features(const char* filename) {
 }
 
 int main(int argc, char* argv[]) {
+    // Suppress unused parameter warnings
+    (void)argc;
+    (void)argv;
+    
     printf("🚀 Red Giant Protocol - Wrapper Test Suite\n");
     printf("Version: %s\n", rg_wrapper_get_version());
     printf("═══════════════════════════════════════════\n");
@@ -267,4 +270,3 @@ int main(int argc, char* argv[]) {
     printf("\n🎉 All tests completed!\n");
     return 0;
 }
-#endif
