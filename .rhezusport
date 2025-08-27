@@ -1,0 +1,29 @@
+Red Giant on Google Cloud → Provides the high-speed transfer endpoint
+File Sharing App on Vercel → Provides the user interface
+Integration → File Sharing App communicates with Red Giant for transfers
+Step-by-Step Deployment:
+1. Deploy Red Giant Protocol to Google Cloud:
+bash
+# Using the existing deploy script
+./deploy.sh gcp
+# This gives you a URL like: https://redgiant-xyz-uc.a.run.app
+2. Configure your File Sharing App with that Red Giant URL:
+jsx
+// In your file sharing app
+const RED_GIANT_URL = "https://redgiant-xyz-uc.a.run.app";
+3. Deploy File Sharing App to Vercel:
+bash
+# Build and deploy to Vercel
+vercel --prod
+# This gives you a URL like: https://fileshare-yourname.vercel.app
+How Users Experience 500+ MB/s Speeds:
+User visits: https://fileshare-yourname.vercel.app
+Uploads file through the web interface
+File Sharing App sends file to your Red Giant endpoint
+Red Giant processes at 500+ MB/s (instead of traditional HTTP speeds)
+Recipient downloads through the same high-speed Red Giant connection
+Key Benefits:
+✅ Frontend on Vercel = Global CDN, instant loading
+✅ Backend on Google Cloud = High-performance compute for Red Giant
+✅ 500+ MB/s speeds = Through Red Giant's optimized C-core
+✅ Scalable architecture = Each service can scale independently
