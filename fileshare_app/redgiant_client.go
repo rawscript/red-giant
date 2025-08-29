@@ -32,10 +32,10 @@ func (rg *RedGiantClient) UploadFile(filePath string) (*RedGiantUploadResult, er
 	}
 	defer file.Close()
 
-	// Get file info
-	fileInfo, err := file.Stat()
+	// Get file info (optional, validates accessibility)
+	_, err = file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file info: %w due to %s", err, fileInfo)
+		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
 
 	// Create multipart form
