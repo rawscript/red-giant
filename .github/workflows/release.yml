@@ -88,9 +88,9 @@ jobs:
       run: |
         brew install cmake || true
 
-    - name: Setup MSBuild (Windows)
+    - name: Setup Visual Studio (Windows)
       if: matrix.os == 'windows-latest'
-      uses: microsoft/setup-msbuild@v2
+      uses: ilammy/msvc-dev-cmd@v1
 
     - name: Install dependencies and build
       working-directory: bindings/node

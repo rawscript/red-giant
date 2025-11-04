@@ -8,14 +8,6 @@
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
       ],
-      "conditions": [
-        ["OS!='win'", {
-          "libraries": [
-            "-lpthread",
-            "-lm"
-          ]
-        }]
-      ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
@@ -25,6 +17,12 @@
         "NAPI_DISABLE_CPP_EXCEPTIONS"
       ],
       "conditions": [
+        ["OS!='win'", {
+          "libraries": [
+            "-lpthread",
+            "-lm"
+          ]
+        }],
         ["OS=='win'", {
           "defines": [
             "_WIN32_WINNT=0x0600"
