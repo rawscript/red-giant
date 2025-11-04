@@ -68,7 +68,7 @@ Red Giant Transport Protocol (RGTP) is a **Layer 4 transport protocol** that fun
 
 ```bash
 # Clone the repository
-git clone https://github.com/redgiant/red-giant.git
+git clone https://github.com/rawscript/red-giant.git
 cd red-giant
 
 # Build the library
@@ -165,7 +165,7 @@ print(data)
 ```go
 package main
 
-import "github.com/your-org/rgtp-go"
+import "github.com/mythic/rgtp-go"
 
 func main() {
     // Expose
