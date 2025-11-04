@@ -91,11 +91,23 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 
 # Examples
 .PHONY: examples
-examples: $(EXAMPLES)
+examples: $(EXAMPLES) go-examples node-bindings
 
 $(BIN_DIR)/%: $(EXAMPLE_DIR)/c/%.c $(STATIC_LIB)
 	@echo "Building example: $@"
 	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS) $(LIBS)
+
+# Go examples
+.PHONY: go-examples
+go-examples: $(STATIC_LIB)
+	@echo "Building Go examples..."
+	@cd examples/go && go build -o ../../$(BIN_DIR)/rgtp_go_example simple_transfer.go
+
+# Node.js bindings
+.PHONY: node-bindings
+node-bindings: $(STATIC_LIB)
+	@echo "Building Node.js bindings..."
+	@cd bindings/node && npm install && npm run build
 
 # Tests
 .PHONY: test
