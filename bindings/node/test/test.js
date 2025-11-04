@@ -18,10 +18,19 @@ let nativeModuleAvailable = false;
 try {
   rgtp = require('../index.js');
   nativeModuleAvailable = true;
-  console.log('✓ Native module loaded successfully');
+  console.log('✅ Native module loaded successfully');
 } catch (error) {
-  console.log('⚠ Native module not available, running limited tests');
-  console.log('  This is normal during npm install process');
+  console.log('❌ Native module failed to load');
+  console.log('   Error:', error.message.split('\n')[0]);
+  
+  // In CI/CD, we should fail if native module can't be built
+  if (process.env.CI || process.env.GITHUB_ACTIONS) {
+    console.log('🚨 CI/CD detected - native module must be available');
+    throw error;
+  }
+  
+  console.log('⚠️  Running in development mode with limited tests');
+  console.log('   To fix: install build tools and run "npm run build"');
 
   // Create mock module for basic testing
   rgtp = {

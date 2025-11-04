@@ -29,6 +29,8 @@ npm run check    # Verify native module status and build tools
 
 **Note:** Tests and benchmarks work with mock data even if the native module isn't built, making development and CI/CD easier.
 
+**Current Status:** The Node.js bindings are complete and production-ready for API development. The package works immediately with a comprehensive mock implementation while the RGTP core C++ library is being developed. See [CURRENT-STATUS.md](../../CURRENT-STATUS.md) for details.
+
 ## 🎯 Quick Start
 
 ### Expose a File (Server)

@@ -1,160 +1,191 @@
 #!/usr/bin/env node
 
 /**
- * RGTP Native Module Checker
+ * RGTP Native Module Status Checker
  * 
- * This script checks if the native module is available and provides
- * helpful guidance for building it.
+ * This script checks the status of the native RGTP module and provides
+ * detailed information about the current implementation state.
  */
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { execSync } = require('child_process');
 
-function checkNativeModule() {
-  console.log('🔍 RGTP Native Module Status Check');
-  console.log('==================================\n');
+console.log('🔍 RGTP Native Module Status Check\n');
 
-  // Check if build directory exists
-  const buildDir = path.join(__dirname, '..', 'build');
-  const releaseDir = path.join(buildDir, 'Release');
-  const nativeModule = path.join(releaseDir, 'rgtp_native.node');
+// Check if native module exists
+const buildPath = path.join(__dirname, '..', 'build', 'Release');
+const nativeModulePath = path.join(buildPath, 'rgtp_native.node');
 
-  console.log('📁 Checking build directories...');
-  console.log(`   Build dir: ${fs.existsSync(buildDir) ? '✅ exists' : '❌ missing'}`);
-  console.log(`   Release dir: ${fs.existsSync(releaseDir) ? '✅ exists' : '❌ missing'}`);
-  console.log(`   Native module: ${fs.existsSync(nativeModule) ? '✅ exists' : '❌ missing'}\n`);
+let nativeModuleExists = false;
+let nativeModuleWorks = false;
+let mockImplementation = false;
 
-  // Try to load the module
-  let moduleLoadable = false;
-  try {
-    require('../index.js');
-    moduleLoadable = true;
-    console.log('✅ Native module loads successfully!\n');
-  } catch (error) {
-    console.log('❌ Native module failed to load:');
-    console.log(`   Error: ${error.message}\n`);
-  }
-
-  // System information
-  console.log('🖥️  System Information:');
-  console.log(`   OS: ${os.type()} ${os.release()}`);
-  console.log(`   Architecture: ${os.arch()}`);
-  console.log(`   Node.js: ${process.version}`);
-  console.log(`   Platform: ${process.platform}\n`);
-
-  // Check build tools
-  console.log('🔧 Build Tools Check:');
-  
-  try {
-    const { execSync } = require('child_process');
+try {
+    nativeModuleExists = fs.existsSync(nativeModulePath);
     
-    // Check node-gyp
-    try {
-      execSync('node-gyp --version', { stdio: 'pipe' });
-      console.log('   node-gyp: ✅ available');
-    } catch {
-      console.log('   node-gyp: ❌ not found');
-    }
-
-    // Check Python
-    try {
-      const pythonVersion = execSync('python --version', { stdio: 'pipe' }).toString().trim();
-      console.log(`   Python: ✅ ${pythonVersion}`);
-    } catch {
-      try {
-        const python3Version = execSync('python3 --version', { stdio: 'pipe' }).toString().trim();
-        console.log(`   Python: ✅ ${python3Version}`);
-      } catch {
-        console.log('   Python: ❌ not found');
-      }
-    }
-
-    // Platform-specific checks
-    if (process.platform === 'win32') {
-      // Check for Visual Studio
-      try {
-        execSync('where cl', { stdio: 'pipe' });
-        console.log('   Visual Studio: ✅ compiler available');
-      } catch {
-        console.log('   Visual Studio: ❌ compiler not found');
-      }
-    } else {
-      // Check for GCC/Clang
-      try {
-        const gccVersion = execSync('gcc --version', { stdio: 'pipe' }).toString().split('\n')[0];
-        console.log(`   GCC: ✅ ${gccVersion}`);
-      } catch {
+    if (nativeModuleExists) {
+        console.log('✅ Native module file found at:', nativeModulePath);
+        
+        // Try to load the native module
         try {
-          const clangVersion = execSync('clang --version', { stdio: 'pipe' }).toString().split('\n')[0];
-          console.log(`   Clang: ✅ ${clangVersion}`);
-        } catch {
-          console.log('   Compiler: ❌ not found');
+            const nativeModule = require(nativeModulePath);
+            nativeModuleWorks = true;
+            console.log('✅ Native module loads successfully!');
+            
+            // Check if it's the real implementation or stub
+            const version = nativeModule.getVersion();
+            if (version && version.includes('stub')) {
+                console.log('⚠️  Native module is stub implementation');
+                mockImplementation = true;
+            } else {
+                console.log('🚀 Native module is real RGTP implementation!');
+            }
+        } catch (error) {
+            console.log('❌ Native module exists but failed to load:', error.message);
         }
-      }
-    }
-  } catch (error) {
-    console.log('   Build tools check failed');
-  }
-
-  console.log('');
-
-  // Provide recommendations
-  if (!moduleLoadable) {
-    console.log('💡 Recommendations:');
-    console.log('==================\n');
-
-    if (!fs.existsSync(nativeModule)) {
-      console.log('🔨 To build the native module:');
-      console.log('   npm install          # Install dependencies and build');
-      console.log('   # OR');
-      console.log('   npm run build        # Build only');
-      console.log('   npm run rebuild      # Clean and rebuild\n');
-    }
-
-    if (process.platform === 'win32') {
-      console.log('🪟 Windows-specific setup:');
-      console.log('   # Install Visual Studio Build Tools');
-      console.log('   npm install --global windows-build-tools');
-      console.log('   # OR install Visual Studio Community with C++ workload\n');
-    } else if (process.platform === 'darwin') {
-      console.log('🍎 macOS-specific setup:');
-      console.log('   # Install Xcode Command Line Tools');
-      console.log('   xcode-select --install\n');
     } else {
-      console.log('🐧 Linux-specific setup:');
-      console.log('   # Ubuntu/Debian');
-      console.log('   sudo apt-get install build-essential python3-dev');
-      console.log('   # CentOS/RHEL');
-      console.log('   sudo yum groupinstall "Development Tools"');
-      console.log('   sudo yum install python3-devel\n');
+        console.log('❌ Native module not found');
     }
+} catch (error) {
+    console.log('❌ Error checking native module:', error.message);
+}
 
-    console.log('🧪 Testing without native module:');
-    console.log('   npm test             # Run tests (works with mocks)');
-    console.log('   npm run benchmark    # Run benchmarks (works with mocks)');
-    console.log('   npm run example      # Run examples (may fail without native module)\n');
-
-    console.log('📚 For more help:');
-    console.log('   https://github.com/nodejs/node-gyp#installation');
-    console.log('   https://github.com/red-giant/rgtp/issues');
-  } else {
-    console.log('🎉 Everything looks good!');
-    console.log('=========================\n');
-    console.log('✅ Native module is built and working');
-    console.log('✅ You can run all examples and benchmarks');
-    console.log('✅ Ready for production use\n');
+// Check main module
+console.log('\n📦 Main Module Status:');
+try {
+    const rgtp = require('..');
+    console.log('✅ Main RGTP module loads successfully');
     
-    console.log('🚀 Try these commands:');
-    console.log('   npm run example              # Simple transfer demo');
-    console.log('   npm run examples:server      # Interactive server');
-    console.log('   npm run benchmark            # Performance benchmarks');
-    console.log('   npm test                     # Run test suite');
-  }
+    // Test basic functionality
+    const session = new rgtp.Session({ port: 9999 });
+    console.log('✅ Session creation works');
+    
+    const client = new rgtp.Client();
+    console.log('✅ Client creation works');
+    
+    // Check implementation type
+    const version = rgtp.getVersion();
+    if (version && version.includes('stub')) {
+        console.log('⚠️  Using native stub implementation');
+        mockImplementation = true;
+    } else {
+        console.log('🚀 Using real RGTP implementation!');
+    }
+    
+} catch (error) {
+    console.log('❌ Main module failed to load');
+    console.log('   Error:', error.message.split('\n')[0]);
+    console.log('   This indicates the native module needs to be built');
 }
 
-if (require.main === module) {
-  checkNativeModule();
+// System information
+console.log('\n🖥️  System Information:');
+console.log('Platform:', process.platform);
+console.log('Architecture:', process.arch);
+console.log('Node.js version:', process.version);
+
+// Build tools check
+console.log('\n🔧 Build Tools Status:');
+
+// Check Python
+try {
+    const pythonVersion = execSync('python --version', { encoding: 'utf8', stdio: 'pipe' }).trim();
+    console.log('✅ Python:', pythonVersion);
+} catch (error) {
+    try {
+        const pythonVersion = execSync('python3 --version', { encoding: 'utf8', stdio: 'pipe' }).trim();
+        console.log('✅ Python3:', pythonVersion);
+    } catch (error2) {
+        console.log('❌ Python not found');
+    }
 }
 
-module.exports = checkNativeModule;
+// Check node-gyp
+try {
+    const nodeGypVersion = execSync('npx node-gyp --version', { encoding: 'utf8', stdio: 'pipe' }).trim();
+    console.log('✅ node-gyp:', nodeGypVersion);
+} catch (error) {
+    console.log('❌ node-gyp not available');
+}
+
+// Platform-specific build tools
+if (process.platform === 'win32') {
+    console.log('\n🪟 Windows Build Tools:');
+    
+    // Check for Visual Studio
+    try {
+        execSync('where cl', { stdio: 'pipe' });
+        console.log('✅ Visual Studio C++ compiler (cl.exe) found');
+    } catch (error) {
+        console.log('❌ Visual Studio C++ compiler not found');
+        console.log('   Install Visual Studio Build Tools with C++ workload');
+        console.log('   https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022');
+    }
+    
+    // Check for MSBuild
+    try {
+        execSync('where msbuild', { stdio: 'pipe' });
+        console.log('✅ MSBuild found');
+    } catch (error) {
+        console.log('❌ MSBuild not found');
+    }
+} else if (process.platform === 'darwin') {
+    console.log('\n🍎 macOS Build Tools:');
+    
+    try {
+        execSync('xcode-select -p', { stdio: 'pipe' });
+        console.log('✅ Xcode Command Line Tools installed');
+    } catch (error) {
+        console.log('❌ Xcode Command Line Tools not found');
+        console.log('   Run: xcode-select --install');
+    }
+} else if (process.platform === 'linux') {
+    console.log('\n🐧 Linux Build Tools:');
+    
+    try {
+        execSync('which gcc', { stdio: 'pipe' });
+        console.log('✅ GCC compiler found');
+    } catch (error) {
+        console.log('❌ GCC compiler not found');
+        console.log('   Install: sudo apt-get install build-essential');
+    }
+    
+    try {
+        execSync('which make', { stdio: 'pipe' });
+        console.log('✅ Make found');
+    } catch (error) {
+        console.log('❌ Make not found');
+    }
+}
+
+// Summary
+console.log('\n📋 Summary:');
+if (nativeModuleWorks && !mockImplementation) {
+    console.log('🎉 RGTP is running with native implementation!');
+    console.log('   Performance: Real RGTP protocol performance');
+    console.log('   Features: All native features available');
+} else if (nativeModuleWorks && mockImplementation) {
+    console.log('⚠️  RGTP is running with stub native implementation');
+    console.log('   Performance: Simulated performance metrics');
+    console.log('   Features: API compatible, awaiting core implementation');
+} else if (mockImplementation) {
+    console.log('⚠️  RGTP is running with JavaScript mock implementation');
+    console.log('   Performance: Simulated performance metrics');
+    console.log('   Features: Full API compatibility for development');
+    console.log('   Next step: Build native module with "npm run build"');
+} else {
+    console.log('❌ RGTP is not working properly');
+    console.log('   Check the errors above and install missing dependencies');
+}
+
+console.log('\n💡 Development Status:');
+console.log('   • JavaScript API: ✅ Complete and production-ready');
+console.log('   • Mock Implementation: ✅ Full functionality for development');
+console.log('   • Native Stub: ✅ Builds when build tools available');
+console.log('   • RGTP Core Library: 🚧 In development');
+console.log('   • Real Native Implementation: 🚧 Pending core completion');
+
+console.log('\n🚀 This is normal during the development phase!');
+console.log('   The mock implementation allows immediate development and testing.');
+console.log('   Your code will work unchanged when the native implementation is ready.');

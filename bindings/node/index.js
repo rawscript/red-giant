@@ -42,10 +42,41 @@
  * ```
  */
 
-const native = require('./build/Release/rgtp_native');
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
+
+// Try to load native module, provide helpful error if not available
+let native;
+let nativeAvailable = false;
+
+try {
+  native = require('./build/Release/rgtp_native');
+  nativeAvailable = true;
+} catch (error) {
+  // Native module not available - this is expected during development
+  throw new Error(`
+RGTP Native Module Not Available
+
+The RGTP native module could not be loaded. This is normal during development.
+
+To build the native module:
+1. Install build tools for your platform:
+   - Windows: Visual Studio Build Tools with C++ workload
+   - macOS: Xcode Command Line Tools (xcode-select --install)
+   - Linux: build-essential package (sudo apt-get install build-essential)
+
+2. Run: npm run build
+
+3. If build fails, this indicates the RGTP core library is not yet implemented.
+   The native module contains stub implementations until the core is ready.
+
+Current status: ${error.message}
+
+For development and testing, you can use the examples and tests which include
+fallback implementations for demonstration purposes.
+`);
+}
 
 /**
  * RGTP Session for exposing data

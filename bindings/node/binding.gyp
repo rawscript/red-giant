@@ -6,14 +6,15 @@
         "src/rgtp_node.cpp"
       ],
       "include_dirs": [
-        "<!@(node -p \"require('node-addon-api').include\")",
-        "../../include"
+        "<!@(node -p \"require('node-addon-api').include\")"
       ],
-      "libraries": [
-        "-L../../lib",
-        "-lrgtp",
-        "-lpthread",
-        "-lm"
+      "conditions": [
+        ["OS!='win'", {
+          "libraries": [
+            "-lpthread",
+            "-lm"
+          ]
+        }]
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
