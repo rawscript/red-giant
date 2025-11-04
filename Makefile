@@ -1,147 +1,288 @@
-# Red Giant Protocol - Makefile
-# Builds the C core and wrapper with proper optimization
+# Red Giant Transport Protocol (RGTP) - Makefile
+# Production-ready build system
 
+# Project information
+PROJECT_NAME = rgtp
+VERSION = 1.0.0
+DESCRIPTION = Red Giant Transport Protocol - Layer 4 Implementation
+
+# Directories
+SRC_DIR = src
+INCLUDE_DIR = include
+BUILD_DIR = build
+LIB_DIR = lib
+BIN_DIR = bin
+TEST_DIR = tests
+EXAMPLE_DIR = examples
+DOC_DIR = docs
+
+# Compiler settings
 CC = gcc
-# More aggressive optimization flags for 500+ MB/s throughput
-CFLAGS = -std=c99 -Wall -Wextra -O3 -march=native -mtune=native
-CFLAGS += -ffast-math -funroll-loops -finline-functions -flto
-CFLAGS += -DNDEBUG -fomit-frame-pointer
-CFLAGS += -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
+CXX = g++
+AR = ar
+RANLIB = ranlib
 
-# Platform-specific flags
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Linux)
-    CFLAGS += -pthread
-    LDFLAGS += -lm -lrt
-endif
-ifeq ($(UNAME_S),Darwin)
-    CFLAGS += -pthread
-    LDFLAGS += -lm
-endif
+# Compiler flags
+CFLAGS_BASE = -std=c99 -Wall -Wextra -Wpedantic -Wformat=2 -Wstrict-prototypes
+CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
+CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -DNDEBUG -march=native -flto
+CFLAGS_PROFILE = $(CFLAGS_RELEASE) -pg -fprofile-arcs -ftest-coverage
 
-# Debug build
-DEBUG_CFLAGS = -std=c99 -Wall -Wextra -g -O0 -DDEBUG
-DEBUG_CFLAGS += -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
+# Include paths
+INCLUDES = -I$(INCLUDE_DIR)
+
+# Library flags
+LDFLAGS = -L$(LIB_DIR)
+LIBS = -lrgtp -lpthread -lm
 
 # Source files
-CORE_SOURCES = red_giant.c red_giant_reliable.c
-WRAPPER_SOURCES = red_giant_wrapper.c
-TEST_SOURCES = test_wrapper.c
-EXAMPLE_SOURCES = example_usage.c
-INTEGRATION_SOURCES = integration_test.c
+CORE_SOURCES = $(wildcard $(SRC_DIR)/core/*.c)
+CORE_OBJECTS = $(CORE_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+
+# Library targets
+STATIC_LIB = $(LIB_DIR)/librgtp.a
+SHARED_LIB = $(LIB_DIR)/librgtp.so.$(VERSION)
+SHARED_LIB_LINK = $(LIB_DIR)/librgtp.so
+
+# Example targets
+EXAMPLES = $(patsubst $(EXAMPLE_DIR)/c/%.c,$(BIN_DIR)/%,$(wildcard $(EXAMPLE_DIR)/c/*.c))
+
+# Test targets  
+TESTS = $(patsubst $(TEST_DIR)/%.c,$(BIN_DIR)/test_%,$(wildcard $(TEST_DIR)/*.c))
+
+# Default build type
+BUILD_TYPE ?= release
+
+# Set flags based on build type
+ifeq ($(BUILD_TYPE),debug)
+    CFLAGS = $(CFLAGS_DEBUG)
+else ifeq ($(BUILD_TYPE),profile)
+    CFLAGS = $(CFLAGS_PROFILE)
+else
+    CFLAGS = $(CFLAGS_RELEASE)
+endif
+
+# Default target
+.PHONY: all
+all: directories $(STATIC_LIB) $(SHARED_LIB) examples
+
+# Create necessary directories
+.PHONY: directories
+directories:
+	@mkdir -p $(BUILD_DIR)/core $(LIB_DIR) $(BIN_DIR)
+
+# Static library
+$(STATIC_LIB): $(CORE_OBJECTS)
+	@echo "Creating static library: $@"
+	@$(AR) rcs $@ $^
+	@$(RANLIB) $@
+
+# Shared library
+$(SHARED_LIB): $(CORE_OBJECTS)
+	@echo "Creating shared library: $@"
+	@$(CC) -shared -Wl,-soname,librgtp.so.1 -o $@ $^ $(LIBS)
+	@ln -sf librgtp.so.$(VERSION) $(SHARED_LIB_LINK)
 
 # Object files
-CORE_OBJECTS = $(CORE_SOURCES:.c=.o)
-WRAPPER_OBJECTS = $(WRAPPER_SOURCES:.c=.o)
-TEST_OBJECTS = $(TEST_SOURCES:.c=.o)
-EXAMPLE_OBJECTS = $(EXAMPLE_SOURCES:.c=.o)
-INTEGRATION_OBJECTS = $(INTEGRATION_SOURCES:.c=.o)
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@echo "Compiling: $<"
+	@mkdir -p $(dir $@)
+	@$(CC) $(CFLAGS) $(INCLUDES) -fPIC -c $< -o $@
 
-# Targets
-.PHONY: all clean test debug install examples
+# Examples
+.PHONY: examples
+examples: $(EXAMPLES)
 
-all: test_wrapper example_usage integration_test
+$(BIN_DIR)/%: $(EXAMPLE_DIR)/c/%.c $(STATIC_LIB)
+	@echo "Building example: $@"
+	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS) $(LIBS)
 
-# Build optimized test program
-test_wrapper: $(TEST_SOURCES) $(WRAPPER_SOURCES) $(CORE_SOURCES)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# Tests
+.PHONY: test
+test: $(TESTS)
+	@echo "Running tests..."
+	@for test in $(TESTS); do \
+		echo "Running $$test"; \
+		$$test || exit 1; \
+	done
 
-# Build example program
-example_usage: $(EXAMPLE_SOURCES) $(WRAPPER_SOURCES) $(CORE_SOURCES)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+$(BIN_DIR)/test_%: $(TEST_DIR)/%.c $(STATIC_LIB)
+	@echo "Building test: $@"
+	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS) $(LIBS)
 
-# Build integration test
-integration_test: $(INTEGRATION_SOURCES) $(WRAPPER_SOURCES) $(CORE_SOURCES)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# Build variants
+.PHONY: debug release profile
+debug:
+	@$(MAKE) BUILD_TYPE=debug
 
-# Build debug version
-debug: CFLAGS = $(DEBUG_CFLAGS)
-debug: test_wrapper_debug
+release:
+	@$(MAKE) BUILD_TYPE=release
 
-test_wrapper_debug: $(TEST_SOURCES) $(WRAPPER_SOURCES) $(CORE_SOURCES)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+profile:
+	@$(MAKE) BUILD_TYPE=profile
 
-# Build static library
-libred_giant.a: $(CORE_OBJECTS) $(WRAPPER_OBJECTS)
-	ar rcs $@ $^
+# Benchmarks
+.PHONY: benchmark
+benchmark: $(BIN_DIR)/rgtp_demo
+	@echo "Running performance benchmarks..."
+	@$(BIN_DIR)/rgtp_demo
 
-# Build shared library
-libred_giant.so: $(CORE_SOURCES) $(WRAPPER_SOURCES)
-	$(CC) $(CFLAGS) -fPIC -shared -o $@ $^ $(LDFLAGS)
+# Documentation
+.PHONY: docs
+docs:
+	@echo "Generating documentation..."
+	@doxygen Doxyfile 2>/dev/null || echo "Doxygen not found, skipping docs"
 
-# Individual object files
-%.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+# Installation
+PREFIX ?= /usr/local
+INSTALL_LIB_DIR = $(PREFIX)/lib
+INSTALL_INCLUDE_DIR = $(PREFIX)/include
+INSTALL_BIN_DIR = $(PREFIX)/bin
 
-# Run tests
-test: test_wrapper
-	@echo "Running Red Giant Protocol tests..."
-	./test_wrapper
+.PHONY: install
+install: all
+	@echo "Installing RGTP..."
+	@install -d $(INSTALL_LIB_DIR) $(INSTALL_INCLUDE_DIR) $(INSTALL_BIN_DIR)
+	@install -m 644 $(STATIC_LIB) $(INSTALL_LIB_DIR)/
+	@install -m 755 $(SHARED_LIB) $(INSTALL_LIB_DIR)/
+	@ln -sf librgtp.so.$(VERSION) $(INSTALL_LIB_DIR)/librgtp.so
+	@cp -r $(INCLUDE_DIR)/rgtp $(INSTALL_INCLUDE_DIR)/
+	@install -m 755 $(BIN_DIR)/rgtp_* $(INSTALL_BIN_DIR)/ 2>/dev/null || true
+	@ldconfig 2>/dev/null || true
+	@echo "RGTP installed successfully!"
 
-# Run examples
-examples: example_usage
-	@echo "Running Red Giant Protocol examples..."
-	./example_usage
+.PHONY: uninstall
+uninstall:
+	@echo "Uninstalling RGTP..."
+	@rm -f $(INSTALL_LIB_DIR)/librgtp.*
+	@rm -rf $(INSTALL_INCLUDE_DIR)/rgtp
+	@rm -f $(INSTALL_BIN_DIR)/rgtp_*
+	@ldconfig 2>/dev/null || true
 
-# Run integration tests
-integration: integration_test
-	@echo "Running Red Giant Protocol integration tests..."
-	./integration_test
+# Packaging
+.PHONY: package
+package: clean all
+	@echo "Creating package..."
+	@tar -czf rgtp-$(VERSION).tar.gz \
+		--exclude='.git*' \
+		--exclude='build' \
+		--exclude='*.tar.gz' \
+		--transform 's,^,rgtp-$(VERSION)/,' \
+		*
 
-# Run with performance monitoring
-perf-test: test_wrapper
-	@echo "Running performance tests..."
-	time ./test_wrapper
+# Cross-compilation
+CROSS_COMPILE ?=
+ifneq ($(CROSS_COMPILE),)
+    CC = $(CROSS_COMPILE)gcc
+    AR = $(CROSS_COMPILE)ar
+    RANLIB = $(CROSS_COMPILE)ranlib
+endif
 
-# Memory leak check (requires valgrind)
-memcheck: test_wrapper_debug
-	valgrind --leak-check=full --show-leak-kinds=all ./test_wrapper_debug
+.PHONY: cross-arm64
+cross-arm64:
+	@$(MAKE) CROSS_COMPILE=aarch64-linux-gnu-
 
-# Install headers and library
-install: libred_giant.a libred_giant.so
-	@echo "Installing Red Giant Protocol..."
-	mkdir -p /usr/local/include/red_giant
-	mkdir -p /usr/local/lib
-	cp red_giant.h red_giant_wrapper.h /usr/local/include/red_giant/
-	cp libred_giant.a libred_giant.so /usr/local/lib/
-	ldconfig
+.PHONY: cross-arm
+cross-arm:
+	@$(MAKE) CROSS_COMPILE=arm-linux-gnueabihf-
 
-# Clean build artifacts
+# Static analysis
+.PHONY: analyze
+analyze:
+	@echo "Running static analysis..."
+	@cppcheck --enable=all --std=c99 $(SRC_DIR) $(INCLUDE_DIR) 2>/dev/null || echo "cppcheck not found"
+	@clang-static-analyzer $(SRC_DIR)/*.c 2>/dev/null || echo "clang static analyzer not found"
+
+# Code formatting
+.PHONY: format
+format:
+	@echo "Formatting code..."
+	@find $(SRC_DIR) $(INCLUDE_DIR) $(EXAMPLE_DIR) $(TEST_DIR) -name "*.c" -o -name "*.h" | \
+		xargs clang-format -i 2>/dev/null || echo "clang-format not found"
+
+# Memory leak check
+.PHONY: memcheck
+memcheck: debug
+	@echo "Running memory leak check..."
+	@valgrind --leak-check=full --show-leak-kinds=all $(BIN_DIR)/rgtp_demo 2>/dev/null || \
+		echo "valgrind not found"
+
+# Performance profiling
+.PHONY: perf
+perf: profile
+	@echo "Running performance profiling..."
+	@$(BIN_DIR)/rgtp_demo
+	@gprof $(BIN_DIR)/rgtp_demo gmon.out > performance_report.txt 2>/dev/null || \
+		echo "gprof not found"
+
+# Clean targets
+.PHONY: clean
 clean:
-	rm -f *.o test_wrapper test_wrapper_debug example_usage integration_test
-	rm -f libred_giant.a libred_giant.so
-	rm -f test_*.dat example_*.dat batch_file_*.dat performance_test.dat
-	rm -f core vgcore.*
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR) $(LIB_DIR) $(BIN_DIR)
+	@rm -f *.gcov *.gcda *.gcno gmon.out performance_report.txt
 
-# Show compiler and system info
-info:
-	@echo "Compiler: $(CC)"
-	@echo "Flags: $(CFLAGS)"
-	@echo "System: $(UNAME_S)"
-	@echo "Architecture: $(shell uname -m)"
-	@$(CC) --version
-
-# Benchmark build (maximum optimization)
-benchmark: CFLAGS += -DNDEBUG -flto -fomit-frame-pointer
-benchmark: test_wrapper
+.PHONY: distclean
+distclean: clean
+	@echo "Deep cleaning..."
+	@rm -f *.tar.gz
+	@rm -rf docs/html docs/latex
 
 # Help
+.PHONY: help
 help:
-	@echo "Red Giant Protocol - Build System"
-	@echo "================================="
+	@echo "Red Giant Transport Protocol (RGTP) Build System"
+	@echo "================================================"
+	@echo ""
 	@echo "Targets:"
-	@echo "  all         - Build test program and examples (default)"
-	@echo "  test_wrapper - Build optimized test program"
-	@echo "  example_usage - Build example program"
-	@echo "  debug       - Build debug version"
+	@echo "  all         - Build libraries and examples (default)"
+	@echo "  debug       - Build with debug flags"
+	@echo "  release     - Build optimized release version"
+	@echo "  profile     - Build with profiling enabled"
+	@echo "  examples    - Build example programs"
 	@echo "  test        - Build and run tests"
-	@echo "  examples    - Build and run examples"
-	@echo "  perf-test   - Run performance tests"
-	@echo "  memcheck    - Run memory leak check (requires valgrind)"
-	@echo "  benchmark   - Build with maximum optimization"
-	@echo "  libred_giant.a  - Build static library"
-	@echo "  libred_giant.so - Build shared library"
-	@echo "  install     - Install headers and libraries"
-	@echo "  clean       - Clean build artifacts"
-	@echo "  info        - Show compiler and system info"
-	@echo "  help        - Show this help"
+	@echo "  benchmark   - Run performance benchmarks"
+	@echo "  docs        - Generate documentation"
+	@echo "  install     - Install system-wide"
+	@echo "  uninstall   - Remove system installation"
+	@echo "  package     - Create distribution package"
+	@echo "  analyze     - Run static analysis"
+	@echo "  format      - Format source code"
+	@echo "  memcheck    - Check for memory leaks"
+	@echo "  perf        - Performance profiling"
+	@echo "  clean       - Remove build artifacts"
+	@echo "  distclean   - Deep clean everything"
+	@echo ""
+	@echo "Cross-compilation:"
+	@echo "  cross-arm64 - Cross-compile for ARM64"
+	@echo "  cross-arm   - Cross-compile for ARM32"
+	@echo ""
+	@echo "Variables:"
+	@echo "  BUILD_TYPE  - debug, release, profile (default: release)"
+	@echo "  PREFIX      - Installation prefix (default: /usr/local)"
+	@echo "  CC          - C compiler (default: gcc)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make debug"
+	@echo "  make test"
+	@echo "  make install PREFIX=/opt/rgtp"
+	@echo "  make cross-arm64"
+
+# Version information
+.PHONY: version
+version:
+	@echo "RGTP Version: $(VERSION)"
+	@echo "Build Type: $(BUILD_TYPE)"
+	@echo "Compiler: $(CC)"
+	@echo "Flags: $(CFLAGS)"
+
+# Show configuration
+.PHONY: config
+config: version
+	@echo "Configuration:"
+	@echo "  Source Dir: $(SRC_DIR)"
+	@echo "  Include Dir: $(INCLUDE_DIR)"
+	@echo "  Build Dir: $(BUILD_DIR)"
+	@echo "  Library Dir: $(LIB_DIR)"
+	@echo "  Binary Dir: $(BIN_DIR)"
+	@echo "  Install Prefix: $(PREFIX)"
