@@ -11,6 +11,16 @@
     "clean": "node-gyp clean",
     "test": "mocha test/test.js",
     "example": "node examples/simple_transfer.js",
+    "benchmark": "node benchmark/benchmark.js",
+    "benchmark:memory": "node --expose-gc benchmark/benchmark.js --memory",
+    "examples:server": "node examples/streaming_server.js",
+    "examples:batch": "node examples/batch_downloader.js",
+    "examples:monitor": "node examples/performance_monitor.js",
+    "build:binaries": "node ../../scripts/build-binaries.js build",
+    "create:installer": "node ../../scripts/build-binaries.js installer",
+    "docs:serve": "cd ../../docs && bundle exec jekyll serve",
+    "docs:build": "cd ../../docs && bundle exec jekyll build",
+    "check": "node scripts/check-native.js",
     "prepublishOnly": "npm test"
   },
   "keywords": [
@@ -90,6 +100,7 @@
     "src/",
     "examples/",
     "test/",
+    "benchmark/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"

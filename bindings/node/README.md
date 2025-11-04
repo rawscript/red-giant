@@ -22,6 +22,13 @@ npm install rgtp
 - Native compilation tools (node-gyp)
 - RGTP C library installed system-wide
 
+**Check Installation:**
+```bash
+npm run check    # Verify native module status and build tools
+```
+
+**Note:** Tests and benchmarks work with mock data even if the native module isn't built, making development and CI/CD easier.
+
 ## 🎯 Quick Start
 
 ### Expose a File (Server)
@@ -410,6 +417,46 @@ MIT License - see LICENSE file for details.
 ## 🤝 Contributing
 
 Contributions are welcome! Please see the main RGTP repository for contribution guidelines.
+
+## 🛠️ Troubleshooting
+
+### Native Module Build Issues
+
+If you encounter build errors:
+
+1. **Check your setup:**
+   ```bash
+   npm run check    # Diagnose build environment
+   ```
+
+2. **Install build tools:**
+   ```bash
+   # Windows
+   npm install --global windows-build-tools
+   
+   # macOS
+   xcode-select --install
+   
+   # Linux (Ubuntu/Debian)
+   sudo apt-get install build-essential python3-dev
+   ```
+
+3. **Clean and rebuild:**
+   ```bash
+   npm run clean && npm run rebuild
+   ```
+
+### Development Without Native Module
+
+You can develop and test RGTP without building the native module:
+
+```bash
+npm test           # Tests work with mock data
+npm run benchmark  # Benchmarks work with mock data
+npm run check      # Check what's missing
+```
+
+The mock system provides realistic behavior for development and CI/CD environments.
 
 ## 🔗 Links
 

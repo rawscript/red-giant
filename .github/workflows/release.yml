@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: RGTP ${{ github.ref }}
+        body: |
+          ## Changes in this Release
+          
+          See [CHANGELOG.md](https://github.com/red-giant/rgtp/blob/main/bindings/node/CHANGELOG.md) for detailed changes.
+          
+          ## Installation
+          
+          ```bash
+          npm install rgtp@${{ github.ref_name }}
+          ```
+          
+          ## Quick Start
+          
+          ```javascript
+          const rgtp = require('rgtp');
+          
+          // Expose a file
+          const session = new rgtp.Session({ port: 9999 });
+          await session.exposeFile('myfile.bin');
+          
+          // Pull a file
+          const client = new rgtp.Client();
+          await client.pullToFile('localhost', 9999, 'downloaded.bin');
+          ```
+        draft: false
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+
+  build-binaries:
+    name: Build Binary for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            artifact_name: rgtp-linux-x64
+          - os: windows-latest
+            target: win32-x64
+            artifact_name: rgtp-win32-x64
+          - os: macos-latest
+            target: darwin-x64
+            artifact_name: rgtp-darwin-x64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential python3-dev cmake
+
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install cmake || true
+
+    - name: Setup MSBuild (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install dependencies and build
+      working-directory: bindings/node
+      run: |
+        npm ci
+        npm run build
+      continue-on-error: true
+
+    - name: Package binary
+      working-directory: bindings/node
+      run: |
+        mkdir -p dist
+        if [ -d "build/Release" ]; then
+          tar -czf dist/${{ matrix.artifact_name }}.tar.gz -C build/Release .
+        else
+          echo "No binary built" > dist/${{ matrix.artifact_name }}.txt
+        fi
+      shell: bash
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: bindings/node/dist/${{ matrix.artifact_name }}.tar.gz
+        asset_name: ${{ matrix.artifact_name }}.tar.gz
+        asset_content_type: application/gzip
+      continue-on-error: true
