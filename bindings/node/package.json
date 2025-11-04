@@ -9,10 +9,9 @@
     "build": "node-gyp build",
     "rebuild": "node-gyp rebuild",
     "clean": "node-gyp clean",
-    "test": "node test/test.js",
+    "test": "mocha test/test.js",
     "example": "node examples/simple_transfer.js",
-    "prepublishOnly": "npm run build && npm test",
-    "prepack": "npm run build"
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "rgtp",
