@@ -165,16 +165,38 @@ print(data)
 ```go
 package main
 
-import "github.com/mythic/rgtp-go"
+import (
+    "log"
+    rgtp "github.com/rawscript/red-giant/bindings/go"
+)
 
 func main() {
-    // Expose
-    session := rgtp.NewSession()
-    session.ExposeFile("data.bin")
-    
-    // Pull
-    client := rgtp.NewClient()
-    data := client.PullFrom("192.168.1.100:9999")
+    // Expose a file
+    session, err := rgtp.NewSession(&rgtp.Config{
+        Port:         9999,
+        AdaptiveMode: true,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer session.Close()
+
+    err = session.ExposeFile("data.bin")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Pull a file
+    client, err := rgtp.NewClient(nil)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer client.Close()
+
+    err = client.PullToFile("192.168.1.100", 9999, "downloaded.bin")
+    if err != nil {
+        log.Fatal(err)
+    }
 }
 ```
 
