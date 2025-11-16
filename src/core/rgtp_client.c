@@ -12,15 +12,29 @@
  * @copyright MIT License
  */
 
-#include "rgtp/rgtp.h"
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <windows.h>
+#define close closesocket
+#define usleep(x) Sleep((x) / 1000)
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
+
+#include "rgtp/rgtp.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+
+#ifdef _WIN32
+#define getpid() GetCurrentProcessId()
+#endif
 
 typedef struct {
     uint32_t session_id;
@@ -41,7 +55,7 @@ static int receive_rgtp_packet(int sockfd, rgtp_header_t* header,
     uint8_t buffer[65536]; // Max IP packet size
     socklen_t from_len = sizeof(*from);
     
-    ssize_t received = recvfrom(sockfd, buffer, sizeof(buffer), 0,
+    ssize_t received = recvfrom(sockfd, (char*)buffer, sizeof(buffer), 0,
                                (struct sockaddr*)from, &from_len);
     
     if (received < (ssize_t)sizeof(rgtp_header_t)) {
@@ -78,7 +92,7 @@ static int send_pull_request(int sockfd, struct sockaddr_in* dest,
     header.sequence = htonl(chunk_id);
     header.chunk_size = 0;
     
-    return sendto(sockfd, &header, sizeof(header), 0,
+    return sendto(sockfd, (const char*)&header, sizeof(header), 0,
                  (struct sockaddr*)dest, sizeof(*dest));
 }
 
@@ -138,7 +152,7 @@ int rgtp_pull_data(int sockfd, struct sockaddr_in* source,
                 memcpy(&session.manifest, payload, sizeof(rgtp_manifest_t));
                 
                 printf("[RGTP] Manifest received: %lu bytes, %u chunks\n",
-                       session.manifest.total_size, session.manifest.chunk_count);
+                       (unsigned long)session.manifest.total_size, session.manifest.chunk_count);
                 
                 // Allocate bitmaps and data buffer
                 uint32_t bitmap_size = (session.manifest.chunk_count + 7) / 8;
@@ -238,7 +252,7 @@ int rgtp_pull_data(int sockfd, struct sockaddr_in* source,
             memcpy(buffer, session.data_buffer, session.manifest.total_size);
             *size = session.manifest.total_size;
             
-            printf("[RGTP] Pull completed successfully: %lu bytes\n", *size);
+            printf("[RGTP] Pull completed successfully: %llu bytes\n", (unsigned long long)*size);
             
             // Cleanup
             free(session.chunk_bitmap);

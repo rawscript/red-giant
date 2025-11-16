@@ -1,7 +1,7 @@
 /**
  * HTTP Server using RGTP as Layer 4 Transport Protocol
  * 
- * This example demonstrates how HTTP can run directly over RGTP instead of TCP.
+ * This example demonstrates an HTTP server that uses RGTP instead of TCP.
  * RGTP replaces TCP entirely at Layer 4, providing:
  * - Natural multicast (one exposure serves multiple clients)
  * - Instant resume capability
@@ -15,14 +15,19 @@
  * Data Link Layer:   Ethernet/WiFi
  */
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <libgen.h>
 #include <limits.h>
 #include "rgtp/rgtp.h"
 

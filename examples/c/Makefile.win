@@ -1,0 +1,50 @@
+# Makefile for RGTP HTTPS Examples (Windows Version)
+
+# Compiler and flags
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -std=c99 -D_WIN32
+LDFLAGS = -L../../lib -L/C/msys64/mingw64/lib -lrgtp -lssl -lcrypto -lws2_32 -lgdi32
+
+# Include paths
+INCLUDES = -I../../include -IC:/msys64/mingw64/include
+
+# Source files
+HTTPS_SERVER_SRC = https_over_rgtp_server_win.c
+HTTPS_CLIENT_SRC = https_over_rgtp_client_win.c
+
+# Executables
+HTTPS_SERVER_BIN = https_rgtp_server.exe
+HTTPS_CLIENT_BIN = https_rgtp_client.exe
+
+# Default target
+.PHONY: all
+all: $(HTTPS_SERVER_BIN) $(HTTPS_CLIENT_BIN)
+
+# HTTPS Server
+$(HTTPS_SERVER_BIN): $(HTTPS_SERVER_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+
+# HTTPS Client
+$(HTTPS_CLIENT_BIN): $(HTTPS_CLIENT_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+
+# Clean build artifacts
+.PHONY: clean
+clean:
+	del $(HTTPS_SERVER_BIN) $(HTTPS_CLIENT_BIN) 2>nul || exit 0
+
+# Install (requires admin privileges)
+.PHONY: install
+install: all
+	copy $(HTTPS_SERVER_BIN) C:\Windows\System32\
+	copy $(HTTPS_CLIENT_BIN) C:\Windows\System32\
+
+# Help
+.PHONY: help
+help:
+	@echo RGTP HTTPS Examples Makefile (Windows Version)
+	@echo ===========================================
+	@echo all          - Build all examples
+	@echo clean        - Remove build artifacts
+	@echo install      - Install binaries to System32
+	@echo help         - Show this help message

@@ -12,31 +12,94 @@
  * @copyright MIT License
  */
 
-#include "rgtp/rgtp.h"
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <windows.h>
+#define close closesocket
+#define getpid() GetCurrentProcessId()
+#define usleep(x) Sleep((x) / 1000)
+static int winsock_initialized = 0;
+#else
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
+#include "rgtp/rgtp.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <time.h>
 
+/**
+ * @brief Initialize RGTP library (call once per process)
+ * @return 0 on success, -1 on error
+ */
+int rgtp_init(void) {
+    #ifdef _WIN32
+    // Initialize Winsock
+    if (!winsock_initialized) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
+            return -1;
+        }
+        winsock_initialized = 1;
+    }
+    #endif
+    return 0;
+}
+
+/**
+ * @brief Cleanup RGTP library (call before exit)
+ */
+void rgtp_cleanup(void) {
+    #ifdef _WIN32
+    if (winsock_initialized) {
+        WSACleanup();
+        winsock_initialized = 0;
+    }
+    #endif
+}
+
 // Create RGTP socket (raw socket for custom protocol)
 int rgtp_socket(void) {
-    // Create raw IP socket for our custom protocol
+    #ifdef _WIN32
+    // Initialize Winsock if not already done
+    if (!winsock_initialized) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
+            return -1;
+        }
+        winsock_initialized = 1;
+    }
+    #endif
+    
+    // Try to create raw IP socket for our custom protocol
+    // Note: On Windows, raw sockets require admin privileges
     int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RGTP);
     if (sockfd < 0) {
-        return -1;
+        #ifdef _WIN32
+        // If raw socket fails, fall back to UDP socket for testing
+        // This allows the library to function without admin privileges
+        sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (sockfd < 0) {
+            return -1;
+        }
+        #endif
     }
     
     // Set socket options for optimal performance
     int opt = 1;
-    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
     
     // Large buffers for high throughput
     int buffer_size = 2 * 1024 * 1024; // 2MB
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &buffer_size, sizeof(buffer_size));
-    setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char*)&buffer_size, sizeof(buffer_size));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char*)&buffer_size, sizeof(buffer_size));
     
     return sockfd;
 }
@@ -70,6 +133,7 @@ static uint32_t calculate_optimal_chunk_size(size_t total_size) {
 static rgtp_surface_t* create_exposure_surface(uint32_t session_id, 
                                                const void* data, size_t size,
                                                struct sockaddr_in* dest) {
+    (void)data; // Mark parameter as used to avoid warning
     rgtp_surface_t* surface = calloc(1, sizeof(rgtp_surface_t));
     if (!surface) return NULL;
     
@@ -157,7 +221,7 @@ static int send_rgtp_packet(int sockfd, struct sockaddr_in* dest,
     header->checksum = htonl(checksum);
     
     // Send packet
-    ssize_t sent = sendto(sockfd, packet, packet_size, 0,
+    ssize_t sent = sendto(sockfd, (const char*)packet, (int)packet_size, 0,
                          (struct sockaddr*)dest, sizeof(*dest));
     
     free(packet);
@@ -194,7 +258,6 @@ int rgtp_expose_data(int sockfd, const void* data, size_t size,
     
     // Step 3: Begin adaptive exposure
     // This is the core innovation - expose chunks based on pull pressure
-    const uint8_t* data_bytes = (const uint8_t*)data;
     uint32_t chunk_size = surface->manifest.optimal_chunk_size;
     
     for (uint32_t i = 0; i < surface->manifest.chunk_count; i++) {

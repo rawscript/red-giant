@@ -29,9 +29,13 @@ examples/
 │   ├── simple_puller.c        # Simple data puller
 │   ├── http_over_rgtp_server.c # HTTP server using RGTP transport
 │   ├── http_over_rgtp_client.c # HTTP client using RGTP transport
+│   ├── https_over_rgtp_server_win.c # HTTPS server (Windows compatible)
+│   ├── https_over_rgtp_client_win.c # HTTPS client (Windows compatible)
 │   ├── rgtp_layer4_demo.c     # Pure Layer 4 RGTP demonstration
 │   ├── industrial_iot_rgtp.c  # Industrial IoT scenario
-│   └── Makefile               # Build configuration
+│   ├── Makefile               # Build configuration (Unix/Linux/macOS)
+│   ├── Makefile.win           # Build configuration (Windows)
+│   └── WINDOWS_DEMO.md        # Windows demo documentation
 ├── go/                        # Go language examples
 ├── python/                    # Python examples
 ├── node/                      # Node.js examples
@@ -42,10 +46,19 @@ examples/
 
 ### Prerequisites
 
-- Linux/macOS (Windows WSL2 supported)
+- Linux/macOS (Windows WSL2 supported for full functionality)
 - GCC compiler with C99 support
 - RGTP library installed
 - Root privileges (for some examples using raw sockets)
+
+### Windows Demo
+
+For Windows users, there is a special demo that demonstrates the concept without requiring kernel-level modifications:
+
+```bash
+cd examples/c
+# See WINDOWS_DEMO.md for detailed instructions
+```
 
 ### Building Examples
 
@@ -57,7 +70,7 @@ make all
 ### Basic Usage
 
 **1. Simple File Transfer**
-```bash
+``bash
 # Terminal 1: Start exposer
 ./simple_exposer large_file.bin
 

@@ -1,0 +1,150 @@
+# Red Giant Transport Protocol (RGTP) - Windows Makefile
+# Production-ready build system for Windows
+
+# Project information
+PROJECT_NAME = rgtp
+VERSION = 1.0.0
+DESCRIPTION = Red Giant Transport Protocol - Layer 4 Implementation
+
+# Directories
+SRC_DIR = src
+INCLUDE_DIR = include
+BUILD_DIR = build
+LIB_DIR = lib
+BIN_DIR = bin
+TEST_DIR = tests
+EXAMPLE_DIR = examples
+
+# Compiler settings
+CC = gcc
+CXX = g++
+AR = ar
+RANLIB = ranlib
+
+# Compiler flags for Windows
+CFLAGS_BASE = -std=c99 -Wall -Wextra -Wpedantic -D_WIN32
+CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG
+CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -DNDEBUG
+CFLAGS_PROFILE = $(CFLAGS_RELEASE) -pg
+
+# Include paths
+INCLUDES = -I$(INCLUDE_DIR)
+
+# Library flags for Windows
+LDFLAGS = -lws2_32
+LIBS = -lws2_32
+
+# Source files
+CORE_SOURCES = $(wildcard $(SRC_DIR)/core/*.c)
+CORE_OBJECTS = $(CORE_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+
+# Library targets
+STATIC_LIB = $(LIB_DIR)/librgtp.a
+SHARED_LIB = $(LIB_DIR)/librgtp.dll
+
+# Test target
+TEST_PROGRAM = $(BIN_DIR)/test_basic
+
+# Default build type
+BUILD_TYPE ?= release
+
+# Set flags based on build type
+ifeq ($(BUILD_TYPE),debug)
+    CFLAGS = $(CFLAGS_DEBUG)
+else ifeq ($(BUILD_TYPE),profile)
+    CFLAGS = $(CFLAGS_PROFILE)
+else
+    CFLAGS = $(CFLAGS_RELEASE)
+endif
+
+# Default target
+.PHONY: all
+all: directories $(STATIC_LIB) $(SHARED_LIB) test
+
+# Create necessary directories
+.PHONY: directories
+directories:
+	@if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
+	@if not exist "$(BUILD_DIR)/core" mkdir "$(BUILD_DIR)/core"
+	@if not exist "$(LIB_DIR)" mkdir "$(LIB_DIR)"
+	@if not exist "$(BIN_DIR)" mkdir "$(BIN_DIR)"
+
+# Static library
+$(STATIC_LIB): $(CORE_OBJECTS)
+	@echo "Creating static library: $@"
+	@$(AR) rcs $@ $^
+	@$(RANLIB) $@
+
+# Shared library
+$(SHARED_LIB): $(CORE_OBJECTS)
+	@echo "Creating shared library: $@"
+	@$(CC) -shared -o $@ $^ $(LIBS)
+
+# Object files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@echo "Compiling: $<"
+	@if not exist "$(dir $@)" mkdir "$(dir $@)"
+	@$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Test program
+.PHONY: test
+test: $(TEST_PROGRAM)
+	@echo "Running basic RGTP test..."
+	@$(TEST_PROGRAM)
+
+$(TEST_PROGRAM): $(TEST_DIR)/test_basic.c $(STATIC_LIB)
+	@echo "Building test program: $@"
+	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(STATIC_LIB) $(LIBS)
+
+# Build variants
+.PHONY: debug release profile
+debug:
+	@$(MAKE) BUILD_TYPE=debug
+
+release:
+	@$(MAKE) BUILD_TYPE=release
+
+profile:
+	@$(MAKE) BUILD_TYPE=profile
+
+# Clean targets
+.PHONY: clean
+clean:
+	@echo "Cleaning build artifacts..."
+	@if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
+	@if exist "$(LIB_DIR)" rmdir /s /q "$(LIB_DIR)"
+	@if exist "$(BIN_DIR)" rmdir /s /q "$(BIN_DIR)"
+
+.PHONY: distclean
+distclean: clean
+	@echo "Deep cleaning..."
+
+# Help
+.PHONY: help
+help:
+	@echo "Red Giant Transport Protocol (RGTP) Build System (Windows)"
+	@echo "========================================================"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all         - Build libraries and run tests (default)"
+	@echo "  debug       - Build with debug flags"
+	@echo "  release     - Build optimized release version"
+	@echo "  profile     - Build with profiling enabled"
+	@echo "  test        - Build and run basic test"
+	@echo "  clean       - Remove build artifacts"
+	@echo "  distclean   - Deep clean everything"
+	@echo ""
+	@echo "Variables:"
+	@echo "  BUILD_TYPE  - debug, release, profile (default: release)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make debug"
+	@echo "  make test"
+
+# Version information
+.PHONY: version
+version:
+	@echo "RGTP Version: $(VERSION)"
+	@echo "Build Type: $(BUILD_TYPE)"
+	@echo "Compiler: $(CC)"
+	@echo "Flags: $(CFLAGS)"

@@ -21,10 +21,17 @@
 #ifndef RGTP_H
 #define RGTP_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef int socklen_t;
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#endif
+
+#include <stdint.h>
+#include <stdbool.h>
 
 // RGTP operates directly over IP (protocol number 253 - experimental)
 #define IPPROTO_RGTP 253
@@ -42,6 +49,30 @@ typedef enum {
     RGTP_ERROR = 0xFF
 } rgtp_packet_type_t;
 
+#ifdef _WIN32
+// Windows-compatible packed struct
+#pragma pack(push, 1)
+typedef struct {
+    uint8_t version;           // Protocol version
+    uint8_t type;             // Packet type
+    uint16_t flags;           // Control flags
+    uint32_t session_id;      // Exposure session
+    uint32_t sequence;        // Chunk sequence number
+    uint32_t chunk_size;      // Size of this chunk
+    uint32_t checksum;        // Header + data checksum
+} rgtp_header_t;
+
+// Exposure Manifest - describes what's being exposed
+typedef struct {
+    uint64_t total_size;      // Total data size
+    uint32_t chunk_count;     // Number of chunks
+    uint32_t optimal_chunk_size; // Recommended chunk size
+    uint16_t exposure_mode;   // Sequential, parallel, adaptive
+    uint16_t priority;        // Exposure priority
+    uint8_t content_hash[32]; // SHA-256 of complete data
+} rgtp_manifest_t;
+#pragma pack(pop)
+#else
 // RGTP Header (20 bytes - efficient)
 typedef struct __attribute__((packed)) {
     uint8_t version;           // Protocol version
@@ -62,6 +93,7 @@ typedef struct __attribute__((packed)) {
     uint16_t priority;        // Exposure priority
     uint8_t content_hash[32]; // SHA-256 of complete data
 } rgtp_manifest_t;
+#endif
 
 // Exposure Surface - the core innovation
 typedef struct {
@@ -129,7 +161,7 @@ int rgtp_init(void);
 void rgtp_cleanup(void);
 
 #ifdef __cplusplus
-}
+extern "C" {
 #endif
 
 #endif // RGTP_H
