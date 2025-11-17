@@ -1,12 +1,12 @@
 /**
  * HTTPS Client using RGTP as Layer 4 Transport Protocol with TLS Encryption (Windows Version)
  * 
- * This example demonstrates an HTTPS client that uses RGTP instead of TCP with TLS.
- * RGTP completely replaces TCP at Layer 4, providing:
- * - Pull-based data retrieval (no connection state)
- * - Automatic resume on interruption
- * - Out-of-order chunk processing
- * - Natural load balancing through pull pressure
+ * This example demonstrates how HTTPS can run directly over RGTP with TLS instead of TCP.
+ * RGTP replaces TCP entirely at Layer 4, providing:
+ * - Natural multicast (one exposure serves multiple clients)
+ * - Instant resume capability
+ * - No head-of-line blocking
+ * - Stateless operation (no connection management)
  * - Built-in TLS encryption support
  * 
  * Network Stack:
@@ -20,11 +20,12 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <io.h>
+#include <direct.h>
 #else
 #include <unistd.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
 #endif
 
 #include <stdio.h>
@@ -36,30 +37,30 @@
 #include "rgtp/rgtp.h"
 
 #define MAX_URL_SIZE 512
-#define MAX_RESPONSE_SIZE 8192
-#define CHUNK_SIZE 64 * 1024
+#define MAX_RESPONSE_SIZE (10 * 1024 * 1024) // 10MB max response
 
 // Windows compatibility macros
 #ifdef _WIN32
 #define close closesocket
 #define sleep(x) Sleep(x*1000)
-#define strdup _strdup
 #endif
 
+// URL parsing structure
 typedef struct {
     char host[256];
     int port;
-    char path[256];
+    char path[512];
 } url_info_t;
 
 typedef struct {
-    rgtp_surface_t* surface;
     SSL_CTX* ssl_ctx;
     FILE* output_file;
+    rgtp_surface_t* surface;
     size_t total_size;
     size_t downloaded_size;
     time_t start_time;
-    int error;  // Error flag: 0=no error, 1=I/O error (disk full, permissions, etc.)
+    int error;
+    int sockfd;  // RGTP socket
 } https_rgtp_client_t;
 
 // Initialize SSL context
@@ -81,81 +82,61 @@ SSL_CTX* create_ssl_context() {
         return NULL;
     }
 
-    // Configure SSL context
-    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL); // For simplicity, not verifying server cert
-
     return ctx;
 }
 
 // Parse URL into components
-int parse_url(const char* url, url_info_t* info) {
-    // Simple URL parser for https://host:port/path format
-    const char* start = url;
-    
-    // Skip protocol
-    if (strncmp(start, "https://", 8) == 0) {
-        start += 8;
+int parse_url(const char* url, url_info_t* url_info) {
+    // Check if it's an HTTPS URL
+    if (strncmp(url, "https://", 8) != 0) {
+        fprintf(stderr, "Only HTTPS URLs are supported\n");
+        return -1;
     }
+
+    const char* host_start = url + 8;
+    const char* port_start = strchr(host_start, ':');
+    const char* path_start = strchr(host_start, '/');
+    
+    // If no path, default to root
+    if (!path_start) path_start = "/";
     
     // Extract host
-    const char* colon = strchr(start, ':');
-    const char* slash = strchr(start, '/');
-    
-    if (colon && (!slash || colon < slash)) {
-        // Host with port
-        size_t host_len = colon - start;
-        if (host_len >= sizeof(info->host)) {
-            host_len = sizeof(info->host) - 1;
-        }
-        strncpy(info->host, start, host_len);
-        info->host[host_len] = '\0';
+    size_t host_len;
+    if (port_start && port_start < path_start) {
+        // Port specified
+        host_len = port_start - host_start;
+        url_info->port = atoi(port_start + 1);
         
-        // Extract port
-        info->port = atoi(colon + 1);
-        
-        // Extract path
-        const char* path_start = strchr(colon, '/');
-        if (path_start) {
-            strncpy(info->path, path_start, sizeof(info->path) - 1);
-            info->path[sizeof(info->path) - 1] = '\0';
+        // Find path after port
+        const char* temp_path = strchr(port_start, '/');
+        if (temp_path) {
+            path_start = temp_path;
         } else {
-            strncpy(info->path, "/", sizeof(info->path) - 1);
-            info->path[sizeof(info->path) - 1] = '\0';
+            path_start = "/";
         }
-    } else if (slash) {
-        // Host without port
-        size_t host_len = slash - start;
-        if (host_len >= sizeof(info->host)) {
-            host_len = sizeof(info->host) - 1;
-        }
-        strncpy(info->host, start, host_len);
-        info->host[host_len] = '\0';
-        info->port = 443; // Default HTTPS port
-        strncpy(info->path, slash, sizeof(info->path) - 1);
-        info->path[sizeof(info->path) - 1] = '\0';
+    } else if (path_start) {
+        // No port specified, use default HTTPS port
+        host_len = path_start - host_start;
+        url_info->port = 443;
     } else {
-        // Host only
-        strncpy(info->host, start, sizeof(info->host) - 1);
-        info->host[sizeof(info->host) - 1] = '\0';
-        info->port = 443; // Default HTTPS port
-        strncpy(info->path, "/", sizeof(info->path) - 1);
-        info->path[sizeof(info->path) - 1] = '\0';
+        // No path, no port
+        host_len = strlen(host_start);
+        url_info->port = 443;
+        path_start = "/";
     }
     
-    return 0;
-}
-
-// Decrypt data using TLS
-int tls_decrypt_data(SSL_CTX* ctx, const void* ciphertext, size_t ciphertext_len, 
-                     void** plaintext, size_t* plaintext_len) {
-    (void)ctx; // Mark parameter as used
-    // In a real implementation, this would perform actual TLS decryption
-    // For this example, we'll just copy the data as-is to simulate decryption
-    *plaintext_len = ciphertext_len;
-    *plaintext = malloc(*plaintext_len);
-    if (!*plaintext) return -1;
+    if (host_len >= sizeof(url_info->host)) {
+        fprintf(stderr, "Host name too long\n");
+        return -1;
+    }
     
-    memcpy(*plaintext, ciphertext, ciphertext_len);
+    strncpy(url_info->host, host_start, host_len);
+    url_info->host[host_len] = '\0';
+    
+    // Extract path
+    strncpy(url_info->path, path_start, sizeof(url_info->path) - 1);
+    url_info->path[sizeof(url_info->path) - 1] = '\0';
+    
     return 0;
 }
 
@@ -185,9 +166,21 @@ int send_https_request(https_rgtp_client_t* client, const url_info_t* url_info) 
     inet_pton(AF_INET, url_info->host, &server_addr.sin_addr);
 #endif
     
-    // In a real implementation, this would send the request via RGTP
-    // For now, we'll just simulate it
-    printf("Request sent via RGTP (simulated)\n");
+    // Create RGTP surface for sending request
+    rgtp_surface_t* surface = NULL;
+    if (rgtp_expose_data(client->sockfd, request, strlen(request), &server_addr, &surface) < 0) {
+        printf("Failed to send request via RGTP\n");
+        return -1;
+    }
+    
+    printf("Request sent via RGTP\n");
+    
+    // Cleanup
+    if (surface) {
+        free(surface->chunk_bitmap);
+        free(surface);
+    }
+    
     return 0;
 }
 
@@ -208,10 +201,39 @@ int parse_https_headers(const char* response, size_t* content_length) {
     const char* content_len_header = strstr(response, "Content-Length:");
     if (content_len_header) {
         *content_length = atol(content_len_header + 15);
-        printf("Content-Length: %zu bytes\n", *content_length);
+        printf("Content-Length: %llu bytes\n", (unsigned long long)*content_length);
     } else {
         *content_length = 0;
         printf("Content-Length not specified\n");
+    }
+    
+    return 0;
+}
+
+// Decrypt data using TLS (simplified implementation)
+int tls_decrypt_data(SSL_CTX* ctx, const void* ciphertext, size_t ciphertext_len, 
+                     void** plaintext, size_t* plaintext_len) {
+    (void)ctx; // Mark parameter as used
+    // In a full implementation, this would use OpenSSL's SSL_read function
+    // For this demo, we'll simulate decryption by removing a simple prefix
+    const char* prefix = "TLS_ENCRYPTED:";
+    size_t prefix_len = strlen(prefix);
+    
+    if (ciphertext_len > prefix_len && 
+        memcmp(ciphertext, prefix, prefix_len) == 0) {
+        // Remove prefix
+        *plaintext_len = ciphertext_len - prefix_len;
+        *plaintext = malloc(*plaintext_len);
+        if (!*plaintext) return -1;
+        
+        memcpy(*plaintext, (char*)ciphertext + prefix_len, *plaintext_len);
+    } else {
+        // Not encrypted or different format, return as-is
+        *plaintext_len = ciphertext_len;
+        *plaintext = malloc(*plaintext_len);
+        if (!*plaintext) return -1;
+        
+        memcpy(*plaintext, ciphertext, ciphertext_len);
     }
     
     return 0;
@@ -224,10 +246,10 @@ void show_progress(size_t downloaded, size_t total, time_t start_time) {
         time_t elapsed = time(NULL) - start_time;
         double rate = elapsed > 0 ? (double)downloaded / elapsed / 1024 : 0;
         
-        printf("\rDownloaded: %zu/%zu bytes (%.1f%%) at %.1f KB/s", 
-               downloaded, total, percent, rate);
+        printf("\rDownloaded: %llu/%llu bytes (%.1f%%) at %.1f KB/s", 
+               (unsigned long long)downloaded, (unsigned long long)total, percent, rate);
     } else {
-        printf("\rDownloaded: %zu bytes", downloaded);
+        printf("\rDownloaded: %llu bytes", (unsigned long long)downloaded);
     }
     fflush(stdout);
 }
@@ -239,21 +261,25 @@ https_rgtp_client_t* init_https_rgtp_client(const char* output_filename) {
         return NULL;
     }
     
-    // Initialize Windows Sockets (if on Windows)
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    // Initialize RGTP
+    if (rgtp_init() < 0) {
         free(client);
         return NULL;
     }
-#endif
+    
+    // Create RGTP socket
+    client->sockfd = rgtp_socket();
+    if (client->sockfd < 0) {
+        rgtp_cleanup();
+        free(client);
+        return NULL;
+    }
     
     // Initialize SSL context
     client->ssl_ctx = create_ssl_context();
     if (!client->ssl_ctx) {
-#ifdef _WIN32
-        WSACleanup();
-#endif
+        close(client->sockfd);
+        rgtp_cleanup();
         free(client);
         return NULL;
     }
@@ -263,9 +289,8 @@ https_rgtp_client_t* init_https_rgtp_client(const char* output_filename) {
         client->output_file = fopen(output_filename, "wb");
         if (!client->output_file) {
             SSL_CTX_free(client->ssl_ctx);
-#ifdef _WIN32
-            WSACleanup();
-#endif
+            close(client->sockfd);
+            rgtp_cleanup();
             free(client);
             return NULL;
         }
@@ -273,7 +298,7 @@ https_rgtp_client_t* init_https_rgtp_client(const char* output_filename) {
         client->output_file = stdout;
     }
     
-    client->surface = NULL; // In a real implementation, this would be initialized
+    client->surface = NULL;
     client->total_size = 0;
     client->downloaded_size = 0;
     client->start_time = time(NULL);
@@ -285,6 +310,10 @@ https_rgtp_client_t* init_https_rgtp_client(const char* output_filename) {
 // Cleanup client
 void cleanup_https_rgtp_client(https_rgtp_client_t* client) {
     if (client) {
+        if (client->sockfd >= 0) {
+            close(client->sockfd);
+        }
+        
         if (client->output_file && client->output_file != stdout) {
             fclose(client->output_file);
         }
@@ -293,11 +322,7 @@ void cleanup_https_rgtp_client(https_rgtp_client_t* client) {
             SSL_CTX_free(client->ssl_ctx);
         }
         
-        // Cleanup Windows Sockets (if on Windows)
-#ifdef _WIN32
-        WSACleanup();
-#endif
-        
+        rgtp_cleanup();
         free(client);
     }
 }
@@ -324,30 +349,80 @@ int download_https_file(https_rgtp_client_t* client, const char* url) {
         return -1;
     }
     
-    // In a real implementation, this would:
-    // 1. Receive response via RGTP
-    // 2. Parse HTTPS response headers
-    // 3. Download file content via RGTP
-    // 4. Decrypt TLS content
-    // 5. Save to output file
+    // Receive response via RGTP
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(url_info.port);
+#ifdef _WIN32
+    InetPton(AF_INET, url_info.host, &server_addr.sin_addr);
+#else
+    inet_pton(AF_INET, url_info.host, &server_addr.sin_addr);
+#endif
     
-    // For demonstration, we'll just simulate a successful download
-    printf("\nSimulating file download...\n");
-    printf("In a real implementation, this would:\n");
-    printf("1. Receive response via RGTP\n");
-    printf("2. Parse HTTPS response headers\n");
-    printf("3. Download file content via RGTP\n");
-    printf("4. Decrypt TLS content\n");
-    printf("5. Save to output file\n");
-    
-    // Simulate some download progress
-    for (int i = 0; i <= 100; i += 10) {
-        printf("\rDownload progress: %d%%", i);
-        fflush(stdout);
-        sleep(1);
+    // Buffer for response
+    char* response_buffer = malloc(MAX_RESPONSE_SIZE);
+    if (!response_buffer) {
+        fprintf(stderr, "Failed to allocate response buffer\n");
+        return -1;
     }
-    printf("\nDownload completed successfully!\n");
     
+    size_t response_size = MAX_RESPONSE_SIZE;
+    if (rgtp_pull_data(client->sockfd, &server_addr, response_buffer, &response_size) < 0) {
+        fprintf(stderr, "Failed to receive response via RGTP\n");
+        free(response_buffer);
+        return -1;
+    }
+    
+    printf("Received %llu bytes via RGTP\n", (unsigned long long)response_size);
+    
+    // Decrypt TLS content
+    void* decrypted_content = NULL;
+    size_t decrypted_size = 0;
+    if (tls_decrypt_data(client->ssl_ctx, response_buffer, response_size, 
+                        &decrypted_content, &decrypted_size) < 0) {
+        fprintf(stderr, "Failed to decrypt content\n");
+        free(response_buffer);
+        return -1;
+    }
+    
+    printf("Decrypted content: %llu bytes\n", (unsigned long long)decrypted_size);
+    
+    // Parse HTTPS response headers from decrypted content
+    size_t content_length = 0;
+    if (parse_https_headers(decrypted_content, &content_length) < 0) {
+        fprintf(stderr, "Failed to parse HTTPS response headers\n");
+        free(decrypted_content);
+        free(response_buffer);
+        return -1;
+    }
+    
+    // Find start of content (after headers)
+    const char* content_start = strstr(decrypted_content, "\r\n\r\n");
+    if (!content_start) {
+        fprintf(stderr, "Invalid response format\n");
+        free(decrypted_content);
+        free(response_buffer);
+        return -1;
+    }
+    content_start += 4; // Skip \r\n\r\n
+    
+    size_t content_size = decrypted_size - (content_start - (char*)decrypted_content);
+    
+    // Save to output file
+    if (fwrite(content_start, 1, content_size, client->output_file) != content_size) {
+        fprintf(stderr, "Failed to write to output file\n");
+        free(decrypted_content);
+        free(response_buffer);
+        return -1;
+    }
+    
+    fflush(client->output_file);
+    
+    printf("\nDownload completed successfully! Saved %llu bytes\n", (unsigned long long)content_size);
+    
+    // Cleanup
+    free(decrypted_content);
+    free(response_buffer);
     return 0;
 }
 

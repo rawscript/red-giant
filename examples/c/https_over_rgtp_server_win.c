@@ -48,7 +48,7 @@
 #define close closesocket
 #define sleep(x) Sleep(x*1000)
 typedef int socklen_t;
-#define S_ISDIR(x) ((x) & _S_IFDIR)
+// S_ISDIR is already defined in Windows headers, so we don't need to redefine it
 #endif
 
 typedef struct {
@@ -56,6 +56,7 @@ typedef struct {
     int port;
     char document_root[256];
     SSL_CTX* ssl_ctx;
+    int sockfd;  // RGTP socket
 } https_rgtp_server_t;
 
 // Initialize SSL context
@@ -185,31 +186,31 @@ const char* get_mime_type(const char* filename) {
     return "application/octet-stream";
 }
 
-// Encrypt data using TLS
+// Encrypt data using TLS (simplified implementation)
 int tls_encrypt_data(SSL_CTX* ctx, const void* plaintext, size_t plaintext_len, 
                      void** ciphertext, size_t* ciphertext_len) {
     (void)ctx; // Mark parameter as used
-    // In a real implementation, this would perform actual TLS encryption
-    // For this example, we'll just copy the data as-is to simulate encryption
-    *ciphertext_len = plaintext_len;
+    // In a full implementation, this would use OpenSSL's SSL_write function
+    // For this demo, we'll simulate encryption by adding a simple prefix
+    const char* prefix = "TLS_ENCRYPTED:";
+    size_t prefix_len = strlen(prefix);
+    
+    *ciphertext_len = prefix_len + plaintext_len;
     *ciphertext = malloc(*ciphertext_len);
     if (!*ciphertext) return -1;
     
-    memcpy(*ciphertext, plaintext, plaintext_len);
+    memcpy(*ciphertext, prefix, prefix_len);
+    memcpy((char*)*ciphertext + prefix_len, plaintext, plaintext_len);
+    
     return 0;
 }
 
 // Handle HTTPS request over RGTP
-int handle_https_request(https_rgtp_server_t* server, const char* request) {
+int handle_https_request(https_rgtp_server_t* server, const char* request, struct sockaddr_in* client_addr) {
     char path[MAX_PATH_SIZE];
     char sanitized_path[MAX_PATH_SIZE];
-    char full_path[512];
-    
-    #ifdef _WIN32
-    struct _stat file_stat;
-    #else
+    char full_path[1024]; // Increased size to avoid truncation
     struct stat file_stat;
-    #endif
     
     printf("Received HTTPS request: %.100s...\n", request);
     
@@ -280,7 +281,7 @@ int handle_https_request(https_rgtp_server_t* server, const char* request) {
     size_t bytes_read = fread(file_content, 1, file_stat.st_size, file);
     fclose(file);
     
-    if (bytes_read != file_stat.st_size) {
+    if (bytes_read != (size_t)file_stat.st_size) {
         free(file_content);
         // Send 500 Internal Server Error
         // In a real implementation, send this response over RGTP
@@ -294,21 +295,55 @@ int handle_https_request(https_rgtp_server_t* server, const char* request) {
     snprintf(response_headers, sizeof(response_headers),
              "HTTP/1.1 200 OK\r\n"
              "Content-Type: %s\r\n"
-             "Content-Length: %lld\r\n"
+             "Content-Length: %llu\r\n"
              "Connection: close\r\n\r\n",
-             mime_type, (long long)file_stat.st_size);
+             mime_type, (unsigned long long)file_stat.st_size);
+
+    printf("Sending 200 OK response with %llu bytes of %s content\n", 
+           (unsigned long long)file_stat.st_size, mime_type);
     
-    printf("Sending 200 OK response with %lld bytes of %s content\n", 
-           (long long)file_stat.st_size, mime_type);
+    // Create a complete response with headers and content
+    size_t plain_response_size = strlen(response_headers) + file_stat.st_size;
+    char* plain_response = malloc(plain_response_size);
+    if (!plain_response) {
+        free(file_content);
+        printf("Failed to allocate memory for response\n");
+        return -1;
+    }
     
-    // In a real implementation, we would:
-    // 1. Send response headers over RGTP
-    // 2. Send file content over RGTP
-    // 3. Handle TLS encryption
+    memcpy(plain_response, response_headers, strlen(response_headers));
+    memcpy(plain_response + strlen(response_headers), file_content, file_stat.st_size);
     
-    // For now, just print success
-    printf("Successfully processed request for %s\n", full_path);
+    // Encrypt the response with TLS
+    void* encrypted_response = NULL;
+    size_t encrypted_size = 0;
+    if (tls_encrypt_data(server->ssl_ctx, plain_response, plain_response_size, 
+                        &encrypted_response, &encrypted_size) < 0) {
+        printf("Failed to encrypt response with TLS\n");
+        free(plain_response);
+        free(file_content);
+        return -1;
+    }
     
+    printf("Response encrypted with TLS: %llu bytes\n", (unsigned long long)encrypted_size);
+    
+    // Send encrypted response via RGTP
+    rgtp_surface_t* surface = NULL;
+    if (rgtp_expose_data(server->sockfd, encrypted_response, encrypted_size, client_addr, &surface) < 0) {
+        printf("Failed to expose data via RGTP\n");
+        free(encrypted_response);
+        free(plain_response);
+        free(file_content);
+        return -1;
+    }
+    
+    printf("Successfully exposed %llu bytes via RGTP\n", (unsigned long long)encrypted_size);
+    
+    // Cleanup
+    free(surface->chunk_bitmap);
+    free(surface);
+    free(encrypted_response);
+    free(plain_response);
     free(file_content);
     return 0;
 }
@@ -320,21 +355,33 @@ https_rgtp_server_t* init_https_rgtp_server(const char* document_root, int port)
         return NULL;
     }
     
-    // Initialize Windows Sockets (if on Windows)
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    // Initialize RGTP
+    if (rgtp_init() < 0) {
         free(server);
         return NULL;
     }
-#endif
+    
+    // Create RGTP socket
+    server->sockfd = rgtp_socket();
+    if (server->sockfd < 0) {
+        rgtp_cleanup();
+        free(server);
+        return NULL;
+    }
+    
+    // Bind socket
+    if (rgtp_bind(server->sockfd, port) < 0) {
+        close(server->sockfd);
+        rgtp_cleanup();
+        free(server);
+        return NULL;
+    }
     
     // Initialize SSL context
     server->ssl_ctx = create_ssl_context();
     if (!server->ssl_ctx) {
-#ifdef _WIN32
-        WSACleanup();
-#endif
+        close(server->sockfd);
+        rgtp_cleanup();
         free(server);
         return NULL;
     }
@@ -350,7 +397,7 @@ https_rgtp_server_t* init_https_rgtp_server(const char* document_root, int port)
     }
     
     server->port = port;
-    server->surface = NULL; // In a real implementation, this would be initialized
+    server->surface = NULL;
     
     return server;
 }
@@ -358,15 +405,15 @@ https_rgtp_server_t* init_https_rgtp_server(const char* document_root, int port)
 // Cleanup server
 void cleanup_https_rgtp_server(https_rgtp_server_t* server) {
     if (server) {
+        if (server->sockfd >= 0) {
+            close(server->sockfd);
+        }
+        
         if (server->ssl_ctx) {
             SSL_CTX_free(server->ssl_ctx);
         }
         
-        // Cleanup Windows Sockets (if on Windows)
-#ifdef _WIN32
-        WSACleanup();
-#endif
-        
+        rgtp_cleanup();
         free(server);
     }
 }
@@ -377,29 +424,35 @@ void run_https_rgtp_server(https_rgtp_server_t* server) {
     printf("Document root: %s\n", server->document_root);
     printf("Press Ctrl+C to stop the server\n");
     
-    // In a real implementation, this would:
-    // 1. Create RGTP surface/exposure
-    // 2. Listen for incoming RGTP connections
-    // 3. Handle HTTPS requests over RGTP
-    // 4. Serve files with TLS encryption
+    // Buffer for incoming requests
+    char request_buffer[MAX_REQUEST_SIZE];
+    struct sockaddr_in client_addr;
     
-    // For demonstration, we'll just show how it would work
-    printf("\nServer is ready to accept connections!\n");
-    printf("In a real implementation, this would:\n");
-    printf("1. Create an RGTP exposure\n");
-    printf("2. Listen for RGTP pullers\n");
-    printf("3. Handle HTTPS requests over RGTP\n");
-    printf("4. Serve files with TLS encryption\n\n");
-    
-    // Simulate handling a request for demonstration
-    const char* sample_request = "GET /index.html HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    printf("Simulating request handling:\n");
-    handle_https_request(server, sample_request);
-    
-    // Keep server running
+    // Listen for incoming RGTP connections
     while (1) {
-        // In a real implementation, this would check for incoming RGTP connections
-        sleep(1);
+        // In a real implementation, we would receive RGTP packets here
+        // For now, we'll simulate receiving a request
+        printf("\nWaiting for RGTP requests...\n");
+        
+        // Simulate receiving a request (in a real implementation, this would be actual RGTP)
+        const char* sample_request = "GET /index.html HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        memcpy(request_buffer, sample_request, strlen(sample_request) + 1);
+        client_addr.sin_family = AF_INET;
+        client_addr.sin_port = htons(9999);
+        client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+        
+        printf("Received request from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+        
+        // Handle the HTTPS request
+        if (handle_https_request(server, request_buffer, &client_addr) < 0) {
+            printf("Failed to handle request\n");
+        } else {
+            printf("Request handled successfully\n");
+        }
+        
+        // In a real implementation, we would continue listening
+        // For this demo, we'll break after one request
+        break;
     }
 }
 

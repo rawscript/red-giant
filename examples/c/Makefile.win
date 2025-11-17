@@ -1,12 +1,12 @@
 # Makefile for RGTP HTTPS Examples (Windows Version)
 
 # Compiler and flags
-CC = gcc
+CC = "C:/msys64/mingw64/bin/gcc"
 CFLAGS = -Wall -Wextra -O2 -std=c99 -D_WIN32
-LDFLAGS = -L../../lib -L/C/msys64/mingw64/lib -lrgtp -lssl -lcrypto -lws2_32 -lgdi32
+LDFLAGS = -L../../lib -L"C:/msys64/mingw64/lib" -lrgtp -lssl -lcrypto -lws2_32
 
 # Include paths
-INCLUDES = -I../../include -IC:/msys64/mingw64/include
+INCLUDES = -I../../include -I"C:/msys64/mingw64/include"
 
 # Source files
 HTTPS_SERVER_SRC = https_over_rgtp_server_win.c
