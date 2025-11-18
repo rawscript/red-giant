@@ -113,46 +113,48 @@ def pull_file(host, port, output_filename):
     print(f"  • Timeout: 30000 ms")
     print(f"  • Adaptive mode: True")
     
-    # Create client
-    client = rgtp.Client(port)
-    
-    # Start progress monitoring
-    monitor_thread = threading.Thread(
-        target=progress_monitor, 
-        args=(client, "Puller"),
-        daemon=True
-    )
-    monitor_thread.start()
-    
     try:
-        start_time = time.time()
-        client.pull_to_file((host, port), output_filename)
-        end_time = time.time()
+        # Create a proper HTTP GET request
+        request = f"GET /index.html HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n".encode('utf-8')
         
-        print(f"\n File pulled successfully!")
-        print(f"  • Saved as: {output_filename}")
-        print(f"  • Total time: {end_time - start_time:.2f} seconds")
+        # Create client socket
+        client_sock = rgtp.rgtp_socket()
+        
+        # Send request to server (same port for exposing)
+        rgtp.expose_data(client_sock, request, (host, port))
+        print("Request sent to server")
+        
+        # Pull the response from the server (same port for pulling)
+        start_time = time.time()
+        buffer = bytearray(8192)
+        bytes_received = rgtp.pull_data(client_sock, (host, port), buffer, len(buffer))
+        
+        if bytes_received > 0:
+            # Write response to file
+            with open(output_filename, 'wb') as f:
+                f.write(buffer[:bytes_received])
+            
+            end_time = time.time()
+            print(f"\n File pulled successfully!")
+            print(f"  • Saved as: {output_filename}")
+            print(f"  • Total time: {end_time - start_time:.2f} seconds")
+            
+            # Show file info
+            try:
+                file_size = Path(output_filename).stat().st_size
+                print(f"  • File size: {file_size:,} bytes ({file_size / (1024*1024):.1f} MB)")
+            except:
+                pass
+        else:
+            print("No data received from server")
+            return False
         
     except rgtp.RGTPError as e:
         print(f"\n Pull failed: {e}")
         return False
-    
-    # Final statistics
-    try:
-        stats = client.get_stats()
-        print(f"\n Final Statistics:")
-        print(f"  • File size: {stats.total_bytes:,} bytes ({stats.total_bytes / (1024*1024):.1f} MB)")
-        print(f"  • Average throughput: {stats.avg_throughput_mbps:.2f} MB/s")
-        print(f"  • Peak throughput: {stats.throughput_mbps:.2f} MB/s")
-        print(f"  • Chunks received: {stats.chunks_transferred}/{stats.total_chunks}")
-        print(f"  • Retransmissions: {stats.retransmissions}")
-        print(f"  • Efficiency: {stats.efficiency_percent:.1f}%")
-        
-        if stats.total_bytes > 0:
-            print(f"  • Effective speed: {(stats.total_bytes / (1024*1024)) / (stats.elapsed_ms / 1000):.2f} MB/s")
-            
-    except:
-        pass
+    except Exception as e:
+        print(f"\n Unexpected error: {e}")
+        return False
     
     return True
 

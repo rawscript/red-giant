@@ -25,15 +25,17 @@ class RGTPServer:
         self.document_root.mkdir(exist_ok=True)
         self.sessions = {}
         self.running = False
+        self.exposed_files = {}  # Store exposed files for pulling
         
-        # Create server session
-        self.session = rgtp.Session(port)
+        # Create server socket
+        self.sockfd = rgtp.socket()
+        rgtp.bind(self.sockfd, port)
         
         print(f"RGTP Server initialized on port {port}")
         print(f"Document root: {self.document_root.absolute()}")
     
     def start(self):
-        """Start the server."""
+        """Start the server and listen for requests."""
         self.running = True
         print("Server started. Waiting for requests...")
         print(f"Try: python simple_transfer.py pull 127.0.0.1 {self.port}")
@@ -41,9 +43,24 @@ class RGTPServer:
         
         try:
             while self.running:
-                # In a full implementation, we would listen for incoming requests
-                # For now, we'll expose sample data and wait
-                time.sleep(1)
+                try:
+                    # Listen for incoming pull requests
+                    print("Waiting for pull requests...")
+                    buffer = bytearray(8192)
+                    # Use a different port for the client to avoid conflicts
+                    bytes_received = rgtp.pull_data(self.sockfd, ('127.0.0.1', self.port + 1), buffer, len(buffer))
+                    
+                    if bytes_received > 0:
+                        request = buffer[:bytes_received].decode('utf-8')
+                        print(f"Received request: {request}")
+                        # In a real implementation, we would process the request here
+                        # For now, we'll just acknowledge it
+                except Exception as e:
+                    if self.running:
+                        print(f"Error receiving request: {e}")
+                
+                time.sleep(0.1)  # Small delay to prevent busy waiting
+                
         except KeyboardInterrupt:
             print("\nServer interrupted by user")
         finally:
@@ -52,16 +69,21 @@ class RGTPServer:
     def stop(self):
         """Stop the server."""
         self.running = False
-        if hasattr(self, 'session'):
-            self.session.close()
         print("Server stopped")
     
     def expose_data(self, data: bytes, dest: tuple = None) -> None:
         """Expose data for pulling."""
         if dest is None:
-            dest = ('127.0.0.1', 9999)
-        self.session.expose_data(data, dest)
+            dest = ('127.0.0.1', self.port + 1)  # Use different port to avoid conflicts
+            
+        # Store the data for later pulling
+        data_key = f"data_{len(self.exposed_files)}"
+        self.exposed_files[data_key] = data
+        
+        # Actually expose the data
+        surface = rgtp.expose_data(self.sockfd, data, dest)
         print(f"Exposed {len(data)} bytes to {dest[0]}:{dest[1]}")
+        return surface
     
     def expose_file(self, filepath: str, dest: tuple = None) -> None:
         """Expose a file for pulling."""
@@ -73,10 +95,15 @@ class RGTPServer:
             data = f.read()
         
         if dest is None:
-            dest = ('127.0.0.1', 9999)
+            dest = ('127.0.0.1', self.port + 1)  # Use different port to avoid conflicts
             
-        self.session.expose_data(data, dest)
+        # Store the file data for later pulling
+        self.exposed_files[filepath.name] = data
+        
+        # Actually expose the data
+        surface = rgtp.expose_data(self.sockfd, data, dest)
         print(f"Exposed file '{filepath}' ({len(data)} bytes) to {dest[0]}:{dest[1]}")
+        return surface
     
     def serve_sample_content(self):
         """Serve some sample content for testing."""

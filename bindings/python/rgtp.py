@@ -33,7 +33,7 @@ from typing import Optional, Callable, Union, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 import urllib.parse
-import socket
+import socket as socket_module  # Rename to avoid conflict
 import struct
 import ipaddress
 
@@ -196,7 +196,7 @@ class RGTPError(Exception):
     """RGTP-specific exception."""
     pass
 
-def socket() -> int:
+def rgtp_socket() -> int:
     """Create an RGTP socket."""
     if not _lib_loaded:
         print("Warning: RGTP library not loaded, returning mock socket")
@@ -217,31 +217,19 @@ def bind(sockfd: int, port: int) -> None:
     if result < 0:
         raise RGTPError(f"Failed to bind RGTP socket to port {port}")
 
-def expose_data(sockfd: int, data: bytes, dest: Tuple[str, int]) -> object:
-    """Expose data for pulling."""
-    if not _lib_loaded:
-        print(f"Warning: RGTP library not loaded, mock exposing {len(data)} bytes to {dest}")
-        return None
-        
-    # Convert destination to sockaddr_in
-    ip, port = dest
-    
-    # Create proper sockaddr_in structure
+def _create_sockaddr_in(ip: str, port: int) -> bytes:
+    """Create a proper sockaddr_in structure."""
     # struct sockaddr_in {
-    #     short sin_family;    // AF_INET
-    #     unsigned short sin_port;  // Port number
-    #     struct in_addr sin_addr;  // IP address
-    #     char sin_zero[8];    // Padding
+    #     short sin_family;    // AF_INET (2 bytes)
+    #     unsigned short sin_port;  // Port number (2 bytes, network byte order)
+    #     struct in_addr sin_addr;  // IP address (4 bytes)
+    #     char sin_zero[8];    // Padding (8 bytes)
     # }
-    
-    # For Windows, we need to create a proper sockaddr_in structure
-    import socket
-    import struct
     
     # Create sockaddr_in structure (16 bytes total)
     addr_bytes = bytearray(16)
     
-    # sin_family = AF_INET (2 bytes, little endian)
+    # sin_family = AF_INET (2 bytes, little endian on Windows)
     addr_bytes[0] = 2  # AF_INET
     addr_bytes[1] = 0
     
@@ -252,16 +240,16 @@ def expose_data(sockfd: int, data: bytes, dest: Tuple[str, int]) -> object:
     
     # sin_addr (4 bytes)
     try:
-        ip_bytes = socket.inet_aton(ip)
+        ip_bytes = socket_module.inet_aton(ip)
         addr_bytes[4] = ip_bytes[0]
         addr_bytes[5] = ip_bytes[1]
         addr_bytes[6] = ip_bytes[2]
         addr_bytes[7] = ip_bytes[3]
-    except socket.error:
+    except socket_module.error:
         # Handle hostname resolution
         try:
-            ip_addr = socket.gethostbyname(ip)
-            ip_bytes = socket.inet_aton(ip_addr)
+            ip_addr = socket_module.gethostbyname(ip)
+            ip_bytes = socket_module.inet_aton(ip_addr)
             addr_bytes[4] = ip_bytes[0]
             addr_bytes[5] = ip_bytes[1]
             addr_bytes[6] = ip_bytes[2]
@@ -272,6 +260,18 @@ def expose_data(sockfd: int, data: bytes, dest: Tuple[str, int]) -> object:
     # sin_zero padding (8 bytes)
     for i in range(8, 16):
         addr_bytes[i] = 0
+    
+    return bytes(addr_bytes)
+
+def expose_data(sockfd: int, data: bytes, dest: Tuple[str, int]) -> object:
+    """Expose data for pulling."""
+    if not _lib_loaded:
+        print(f"Warning: RGTP library not loaded, mock exposing {len(data)} bytes to {dest}")
+        return None
+        
+    # Convert destination to sockaddr_in
+    ip, port = dest
+    addr_bytes = _create_sockaddr_in(ip, port)
     
     # Convert to ctypes array
     addr_ctypes = (ctypes.c_uint8 * 16).from_buffer_copy(addr_bytes)
@@ -300,61 +300,25 @@ def pull_data(sockfd: int, source: Tuple[str, int], buffer: bytearray, size: int
         
     # Convert source to sockaddr_in
     ip, port = source
-    
-    # Create proper sockaddr_in structure
-    # struct sockaddr_in {
-    #     short sin_family;    // AF_INET
-    #     unsigned short sin_port;  // Port number
-    #     struct in_addr sin_addr;  // IP address
-    #     char sin_zero[8];    // Padding
-    # }
-    
-    # For Windows, we need to create a proper sockaddr_in structure
-    import socket
-    import struct
-    
-    # Create sockaddr_in structure (16 bytes total)
-    addr_bytes = bytearray(16)
-    
-    # sin_family = AF_INET (2 bytes, little endian)
-    addr_bytes[0] = 2  # AF_INET
-    addr_bytes[1] = 0
-    
-    # sin_port (2 bytes, network byte order)
-    port_bytes = struct.pack('>H', port)  # Big endian
-    addr_bytes[2] = port_bytes[0]
-    addr_bytes[3] = port_bytes[1]
-    
-    # sin_addr (4 bytes)
-    try:
-        ip_bytes = socket.inet_aton(ip)
-        addr_bytes[4] = ip_bytes[0]
-        addr_bytes[5] = ip_bytes[1]
-        addr_bytes[6] = ip_bytes[2]
-        addr_bytes[7] = ip_bytes[3]
-    except socket.error:
-        # Handle hostname resolution
-        try:
-            ip_addr = socket.gethostbyname(ip)
-            ip_bytes = socket.inet_aton(ip_addr)
-            addr_bytes[4] = ip_bytes[0]
-            addr_bytes[5] = ip_bytes[1]
-            addr_bytes[6] = ip_bytes[2]
-            addr_bytes[7] = ip_bytes[3]
-        except:
-            raise RGTPError(f"Failed to resolve hostname: {ip}")
-    
-    # sin_zero padding (8 bytes)
-    for i in range(8, 16):
-        addr_bytes[i] = 0
+    addr_bytes = _create_sockaddr_in(ip, port)
     
     # Convert to ctypes array
     addr_ctypes = (ctypes.c_uint8 * 16).from_buffer_copy(addr_bytes)
     
-    buffer_ptr = ctypes.cast((ctypes.c_uint8 * size).from_buffer(buffer), ctypes.c_void_p)
+    # Create a ctypes pointer to the buffer
+    buffer_ptr = (ctypes.c_uint8 * size).from_buffer(buffer)
     size_ptr = ctypes.c_size_t(size)
     
-    result = _lib.rgtp_pull_data(sockfd, addr_ctypes, buffer_ptr, ctypes.byref(size_ptr))
+    # Debug information
+    print(f"Calling rgtp_pull_data with sockfd={sockfd}, addr_ctypes length={len(addr_ctypes)}, buffer_ptr size={size}, size_ptr={size}")
+    
+    try:
+        result = _lib.rgtp_pull_data(sockfd, addr_ctypes, buffer_ptr, ctypes.byref(size_ptr))
+    except Exception as e:
+        print(f"Exception in rgtp_pull_data call: {e}")
+        import traceback
+        traceback.print_exc()
+        raise RGTPError(f"Failed to pull data: {e}")
     
     if result < 0:
         raise RGTPError("Failed to pull data")
@@ -395,7 +359,7 @@ class Session:
     """RGTP session for exposing data."""
     
     def __init__(self, port: int = 9999):
-        self.sockfd = socket()
+        self.sockfd = rgtp_socket()
         bind(self.sockfd, port)
         self.surface = None
         self.port = port
@@ -403,14 +367,14 @@ class Session:
     def expose_data(self, data: bytes, dest: Tuple[str, int] = None) -> None:
         """Expose data for pulling."""
         if dest is None:
-            dest = ('127.0.0.1', 9999)
+            dest = ('127.0.0.1', self.port)
         self.surface = expose_data(self.sockfd, data, dest)
     
     def expose_file(self, filename: Union[str, Path]) -> None:
         """Expose a file for pulling."""
         with open(filename, 'rb') as f:
             data = f.read()
-        self.expose_data(data, ('127.0.0.1', 9999))  # Default destination
+        self.expose_data(data, ('127.0.0.1', self.port))  # Default destination
     
     def get_stats(self) -> Stats:
         """Get session statistics."""
@@ -429,7 +393,7 @@ class Client:
     def __init__(self, port: int = 0):
         # For clients, we don't need to bind to a specific port
         # The OS will assign an ephemeral port
-        self.sockfd = socket()
+        self.sockfd = rgtp_socket()
         self.port = port
     
     def pull_data(self, source: Tuple[str, int], buffer: bytearray, size: int) -> int:
@@ -438,9 +402,11 @@ class Client:
     
     def pull_to_file(self, source: Tuple[str, int], filename: Union[str, Path]) -> None:
         """Pull data and save to file."""
+        # Pull data from source
         buffer = bytearray(65536)  # 64KB buffer
         bytes_received = self.pull_data(source, buffer, len(buffer))
         
+        # Write to file
         with open(filename, 'wb') as f:
             f.write(buffer[:bytes_received])
     
