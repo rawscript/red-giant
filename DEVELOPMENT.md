@@ -2,7 +2,7 @@
 
 This document outlines the development setup and tools for RGTP.
 
-## 🚀 What We've Built
+## 🚀 Current build
 
 ### 1. CI/CD Pipeline (GitHub Actions)
 - **Automated Testing**: Tests on Ubuntu, Windows, macOS with Node.js 16, 18, 20, 22
