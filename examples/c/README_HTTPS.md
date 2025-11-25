@@ -83,8 +83,7 @@ make -C ../.. examples/c/https_over_rgtp_client
 ### Windows
 ```bash
 # Build with MinGW
-cd examples/c
-make -f Makefile.win all
+cd examples/cmake -f Makefile.win all
 ```
 
 ## Running the Examples
