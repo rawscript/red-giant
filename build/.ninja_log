@@ -1,0 +1,6 @@
+# ninja log v7
+30	4488	7857835291981518	CMakeFiles/test_basic.dir/tests/test_basic.c.obj	a64a3d3da6898350
+18	4627	7857835291635829	CMakeFiles/rgtp.dir/src/core/rgtp_core.c.obj	5a0189b025ab1d25
+8	4666	7857835291475548	CMakeFiles/rgtp.dir/src/core/rgtp_client.c.obj	8080e2aff1613ab9
+4668	5061	7857835338080892	librgtp.a	f000c10d3f176b54
+5063	5745	7857835342036650	test_basic.exe	fdcba73060c335ee
