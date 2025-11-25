@@ -51,13 +51,7 @@ examples/
 - RGTP library installed
 - Root privileges (for some examples using raw sockets)
 
-### Windows Demo
-
-For Windows users, there is a special demo that demonstrates the concept without requiring kernel-level modifications:
-
-```bash
-cd examples/c
-# See WINDOWS_DEMO.md for detailed instructions
+#
 ```
 
 ### Building Examples
