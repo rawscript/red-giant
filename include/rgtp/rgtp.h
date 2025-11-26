@@ -104,6 +104,10 @@ typedef struct {
     uint8_t* chunk_bitmap;    // 1 bit per chunk (exposed/not exposed)
     uint32_t bitmap_size;
     
+    // Shared memory for direct access
+    void* shared_memory;      // Pointer to shared memory region
+    size_t shared_memory_size;// Size of shared memory region
+    
     // Adaptive exposure control
     uint32_t exposure_rate;   // Chunks per second
     uint32_t congestion_window; // Like TCP cwnd but for exposure

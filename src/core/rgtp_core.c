@@ -17,6 +17,7 @@
 #include <ws2tcpip.h>
 #include <io.h>
 #include <windows.h>
+#include <synchapi.h>
 #define close closesocket
 #define getpid() GetCurrentProcessId()
 #define usleep(x) Sleep((x) / 1000)
@@ -26,6 +27,7 @@ static int winsock_initialized = 0;
 #include <netinet/ip.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #endif
 
@@ -34,6 +36,60 @@ static int winsock_initialized = 0;
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+
+// Cross-platform memory mapping functions
+#ifdef _WIN32
+static HANDLE mmap_handle = NULL;
+static void* mmap_memory = NULL;
+
+static void* platform_mmap(size_t size) {
+    mmap_handle = CreateFileMapping(
+        INVALID_HANDLE_VALUE,
+        NULL,
+        PAGE_READWRITE,
+        0,
+        (DWORD)size,
+        NULL
+    );
+    
+    if (mmap_handle == NULL) {
+        return NULL;
+    }
+    
+    mmap_memory = MapViewOfFile(
+        mmap_handle,
+        FILE_MAP_ALL_ACCESS,
+        0,
+        0,
+        size
+    );
+    
+    return mmap_memory;
+}
+
+static int platform_munmap(void* addr, size_t size) {
+    if (mmap_memory) {
+        UnmapViewOfFile(mmap_memory);
+        mmap_memory = NULL;
+    }
+    
+    if (mmap_handle) {
+        CloseHandle(mmap_handle);
+        mmap_handle = NULL;
+    }
+    
+    return 0;
+}
+#else
+static void* platform_mmap(size_t size) {
+    void* addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    return (addr == MAP_FAILED) ? NULL : addr;
+}
+
+static int platform_munmap(void* addr, size_t size) {
+    return munmap(addr, size);
+}
+#endif
 
 /**
  * @brief Initialize RGTP library (call once per process)
@@ -159,6 +215,20 @@ static rgtp_surface_t* create_exposure_surface(uint32_t session_id,
         return NULL;
     }
     
+    // Allocate shared memory for direct access
+    surface->shared_memory_size = size;
+    surface->shared_memory = platform_mmap(size);
+    if (!surface->shared_memory) {
+        free(surface->chunk_bitmap);
+        free(surface);
+        return NULL;
+    }
+    
+    // Copy data to shared memory
+    if (data && size > 0) {
+        memcpy(surface->shared_memory, data, size);
+    }
+    
     // Initialize adaptive parameters
     surface->exposure_rate = 100;        // Start with 100 chunks/sec
     surface->congestion_window = 10;     // Conservative start
@@ -241,50 +311,19 @@ int rgtp_expose_data(int sockfd, const void* data, size_t size,
     
     surface->sockfd = sockfd;
     
-    // Step 1: Send exposure request
-    if (send_rgtp_packet(sockfd, dest, RGTP_EXPOSE_REQUEST, session_id, 0, NULL, 0) < 0) {
-        free(surface->chunk_bitmap);
-        free(surface);
-        return -1;
-    }
+    // In direct memory access mode, we don't send packets
+    // Instead, we make the shared memory available for direct access
+    // The receiver will access the shared memory directly
     
-    // Step 2: Send manifest
-    if (send_rgtp_packet(sockfd, dest, RGTP_EXPOSE_MANIFEST, session_id, 0,
-                        &surface->manifest, sizeof(surface->manifest)) < 0) {
-        free(surface->chunk_bitmap);
-        free(surface);
-        return -1;
-    }
-    
-    // Step 3: Begin adaptive exposure
-    // This is the core innovation - expose chunks based on pull pressure
-    uint32_t chunk_size = surface->manifest.optimal_chunk_size;
-    
+    // Mark all chunks as immediately available since they're in shared memory
     for (uint32_t i = 0; i < surface->manifest.chunk_count; i++) {
-        // Calculate chunk boundaries
-        size_t chunk_start = i * chunk_size;
-        size_t chunk_end = chunk_start + chunk_size;
+        mark_chunk_exposed(surface, i);
+        size_t chunk_start = i * surface->manifest.optimal_chunk_size;
+        size_t chunk_end = chunk_start + surface->manifest.optimal_chunk_size;
         if (chunk_end > size) chunk_end = size;
         size_t actual_chunk_size = chunk_end - chunk_start;
-        
-        // Announce chunk availability
-        if (send_rgtp_packet(sockfd, dest, RGTP_CHUNK_AVAILABLE, session_id, i, 
-                            NULL, 0) < 0) {
-            continue; // Don't fail entire exposure for one chunk
-        }
-        
-        // Mark as exposed
-        mark_chunk_exposed(surface, i);
         surface->bytes_exposed += actual_chunk_size;
-        
-        // Adaptive rate limiting based on congestion window
-        if (i > 0 && (i % surface->congestion_window) == 0) {
-            usleep(1000000 / surface->exposure_rate); // Rate limiting
-        }
     }
-    
-    // Step 4: Signal exposure complete
-    send_rgtp_packet(sockfd, dest, RGTP_EXPOSURE_COMPLETE, session_id, 0, NULL, 0);
     
     *surface_out = surface;
     return 0;

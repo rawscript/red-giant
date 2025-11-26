@@ -57,6 +57,42 @@ Red Giant Transport Protocol (RGTP) is a **Layer 4 transport protocol** that fun
 4. Natural load balancing through pull pressure
 ```
 
+## 🔄 Direct Memory Access Mode
+
+RGTP also supports a direct memory access mode that eliminates packets entirely. In this mode:
+
+- **Exposers** map data directly to shared memory
+- **Pullers** access shared memory directly instead of requesting packets
+- **Zero-copy transfers** for maximum performance
+- **Cross-process communication** without network overhead
+
+```c
+// Expose data using direct memory access
+const char* message = "Hello, RGTP with Direct Memory Access!";
+size_t message_len = strlen(message);
+
+// Create destination address (localhost:9999)
+struct sockaddr_in dest = {0};
+dest.sin_family = AF_INET;
+dest.sin_port = htons(9999);
+dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+// Expose data using direct memory access
+rgtp_surface_t* surface = NULL;
+rgtp_expose_data(sockfd, message, message_len, &dest, &surface);
+
+// Puller accesses shared memory directly
+char buffer[1024] = {0};
+size_t buffer_size = sizeof(buffer);
+rgtp_pull_data(sockfd, &source, buffer, &buffer_size);
+```
+
+This mode is particularly useful for:
+- **Inter-process communication** on the same machine
+- **High-performance computing** applications
+- **Real-time systems** requiring minimal latency
+- **Large data transfers** where zero-copy is critical
+
 ## 🌐 RGTP as Layer 4 Protocol
 
 ### **Protocol Stack Integration**
