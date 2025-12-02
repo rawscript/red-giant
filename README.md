@@ -422,8 +422,6 @@ int db_slave_sync(db_slave_t* slave) {
 }
 ```
 
-### **🔌 Easy Integration Patterns**
-
 #### **Middleware Approach**
 ```c
 // Transparent RGTP middleware
