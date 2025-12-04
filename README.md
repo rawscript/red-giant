@@ -87,7 +87,7 @@ rgtp-pull 203.0.113.42:443 ubuntu-24.04.iso
 ## Quick Start (After UDP Merge – 2025 Edition)
 
 ```bash
-git clone https://github.com/yourname/red-giant.git
+git clone https://github.com/rawscript/red-giant.git
 cd red-giant && make -j
 
 # Expose a 50 GB file on port 443
