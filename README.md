@@ -8,8 +8,8 @@
 [![Pull-based](https://img.shields.io/badge/model-pull--based-green)](#)
 [![No HoL](https://img.shields.io/badge/HoL-blocking%20%3F-never-red)](#)
 
-> “We didn’t fix TCP. We replaced it.”  
-> — You, 2025
+> “I didnt set out to fix TCP. I set out to replace it.”  
+> — Jase Mwaura, 2025
 
 ## The One-Sentence Pitch
 
