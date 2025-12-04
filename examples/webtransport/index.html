@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Red Giant WebTransport — 10 GB in seconds, instant resume</title>
+<style>
+  body { font-family: system-ui; text-align: center; padding: 50px; background: #000; color: #0f0; }
+  #drop { border: 4px dashed #0f0; padding: 80px; margin: 40px auto; width: 600px; border-radius: 20px; }
+  #drop.dragover { background: #002200; }
+  progress { width: 600px; height: 30px; }
+  code { background: #111; padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Red Giant WebTransport</h1>
+<p>Drag any file (even 10+ GB) here — instant resume if you close the tab</p>
+
+<div id="drop">DROP FILE HERE</div>
+<progress id="prog" value="0" max="100"></progress>
+<div id="status">Ready</div>
+
+<script src="rgtp.js"></script>
+<script>
+// Connect to the Go server on port 4433 using WebTransport (QUIC + HTTP/3)
+const transport = new RGTPEndpoint("https://localhost:4433/rgtp");
+
+const drop = document.getElementById('drop');
+const prog = document.getElementById('prog');
+const status = document.getElementById('status');
+
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('dragover'); }
+drop.ondragleave = () => drop.classList.remove('dragover');
+drop.ondrop = async e => {
+  e.preventDefault();
+  drop.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+
+  status.textContent = `Exposing ${file.name} (${(file.size/1e9).toFixed(2)} GB) ...`;
+  
+  await transport.exposeFile(file, progress => {
+    prog.value = progress * 100;
+    status.textContent = `Uploading — ${progress.toFixed(1)}% — ${(file.size*progress/1e6).toFixed(0)} MB sent`;
+  });
+
+  status.innerHTML = `COMPLETE — File served forever<br>
+    Exposure ID: <code>${transport.currentExposureId}</code><br>
+    Close tab → reopen → instant resume works`;
+};
+</script>
+</script>
+</body>
+</html>
