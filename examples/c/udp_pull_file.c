@@ -1,72 +1,90 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 #include "rgtp/rgtp.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <conio.h>
+#else
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
+
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        printf("Usage: %s <server-ip> <output-file>\n", argv[0]);
+    if (argc != 4) {
+        printf("Usage: %s <server-ip> <exposure-id-32-hex-chars> <output-file>\n", argv[0]);
+        printf("Example: %s 192.168.1.100 27dc5c1b2d04284ba296397213dabdd5 downloaded.exe\n", argv[0]);
         return 1;
     }
 
-    rgtp_init();
-    int sock = rgtp_socket();
+#ifdef _WIN32
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
 
-    struct sockaddr_in server = {0};
+    rgtp_init();
+
+    int sock = rgtp_socket();
+    if (sock < 0) {
+        fprintf(stderr, "Failed to create socket\n");
+        return 1;
+    }
+
+    struct sockaddr_in server = { 0 };
     server.sin_family = AF_INET;
     server.sin_port = htons(443);
     inet_pton(AF_INET, argv[1], &server.sin_addr);
 
-    // Wait for first manifest packet
-    uint8_t buf[2048];
-    socklen_t len = sizeof(server);
-    ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&server, &len);
-    if (n < 48) { perror("recv manifest"); return 1; }
+    uint64_t exposure_id[2];
+    sscanf(argv[2], "%16llx%16llx", &exposure_id[0], &exposure_id[1]);
 
-    rgtp_header_t* h = (rgtp_header_t*)buf;
-    if (h->type != RGTP_EXPOSE_MANIFEST) {
-        fprintf(stderr, "Not a manifest\n");
+    rgtp_surface_t* surface = NULL;
+    if (rgtp_pull_start(sock, &server, exposure_id, &surface) != 0 || !surface) {
+        fprintf(stderr, "Failed to connect to exposure\n");
+        close(sock);
         return 1;
     }
 
-    uint64_t total = be64toh(h->total_size);
-    uint32_t chunks = ntohl(h->chunk_count);
-    uint32_t chunk_sz = ntohl(h->chunk_size);
+    printf("Connected! Exposure has %.3f GB — pulling...\n", surface->total_size / 1e9);
 
-    printf("Manifest received!\n");
-    printf("Size: %.2f GB | Chunks: %u | Chunk size: %u KB\n",
-           total/1e9, chunks, chunk_sz/1024);
+    FILE* out = fopen(argv[3], "wb");
+    if (!out) { perror("fopen"); return 1; }
 
-    rgtp_surface_t* s = rgtp_create_surface(sock, &server);
-    memcpy(s->exposure_id, h->exposure_id, 16);
-    s->total_size = total;
-    s->chunk_count = chunks;
-    s->optimal_chunk_size = chunk_sz;
-    s->chunk_bitmap = calloc(1, (chunks + 7)/8);
+    uint8_t* buffer = malloc(10 * 1024 * 1024);  // 10 MB buffer
+    size_t total_received = 0;
 
-    FILE* out = fopen(argv[2], "wb");
-    size_t received = 0;
-
-    printf("Downloading...\n");
-    while (received < total) {
-        rgtp_poll(s, 100);
-        if (s->bytes_sent > received) {
-            received = s->bytes_sent;
-            int bar = 50 * received / total;
-            printf("\r[%.*s%*s] %.1f%% (%.2f/%.2f GB)",
-                   bar, "**************************************************",
-                   50-bar, "", 100.0*received/total, received/1e9, total/1e9);
-            fflush(stdout);
+    while (total_received < surface->total_size) {
+        size_t received = 0;
+        if (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) != 0) {
+            printf("\nNetwork hiccup — resuming...\n");
         }
-        usleep(100000);
+        else {
+            total_received += received;
+            fwrite(buffer, 1, received, out);
+        }
+
+        printf("\rDownloaded: %.3f / %.3f GB (%.1f%%) — speed: %.1f MB/s   ",
+            total_received / 1e9,
+            surface->total_size / 1e9,
+            100.0 * total_received / surface->total_size,
+            (received / (10 * 1024 * 1024.0)) * 5.0);  // rough speed
+        fflush(stdout);
+
+#ifdef _WIN32
+        if (_kbhit() && _getch() == 27) break;
+#endif
     }
 
-    // In real version: write decrypted chunks to file
-    printf("\nDownload complete: %s\n", argv[2]);
-    rgtp_destroy_surface(s);
+    printf("\n\nDONE! Saved as %s\n", argv[3]);
+    fclose(out);
+    free(buffer);
+    rgtp_destroy_surface(surface);
     close(sock);
-    rgtp_cleanup();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
     return 0;
 }
