@@ -30,7 +30,7 @@ All over standard UDP (port 443 by default). Works behind NAT, on phones, in bro
 | Chunks encrypted once         | No           | No           | No           | **Yes – pre-encrypted on expose** |
 | Receiver-driven congestion    | No           | No           | Sender       | **Yes – natural back-pressure** |
 
-## Core Idea (Now Actually Works on the Real Internet)
+## Core Idea
 
 ```
 1. Handshake (2–3 UDP packets, QUIC-style crypto)
@@ -53,7 +53,7 @@ That’s it. No SYN/ACK hell. No retransmit timers. No connection table explosio
 - **Direct Memory Access mode** – zero-copy localhost (still there!)
 - **TCP socket emulation layer** – drop-in `socket()/send()/recv()` compatibility
 
-## Real Demo You Can Run Right Now (UDP branch coming in 48h)
+## Demo You Can Run Right Now
 
 ```bash
 # Terminal 1 – Exposer (your laptop becomes a CDN origin)
