@@ -1,25 +1,19 @@
 /**
  * @file rgtp.h
- * @brief Red Giant Transport Protocol (RGTP) - Layer 4 Implementation
- * @version 1.0.0
- * @date 2024
+ * @brief Red Giant Transport Protocol — UDP Edition (v2.0 — December 2025)
  * 
- * RGTP is a revolutionary Layer 4 transport protocol that implements
- * exposure-based data transmission, solving fundamental TCP limitations
- * while providing better performance than UDP.
+ * The transport that ends TCP’s 44-year reign.
+ * Expose once. Serve a billion. Zero state. Instant resume.
  * 
- * Key Features:
- * - Stateless chunk-based transfers
- * - Natural multicast support  
- * - Adaptive flow control
- * - Built-in resume capability
- * - No head-of-line blocking
- * 
- * @copyright MIT License
+ * Now 100 % UDP. Works on phones, laptops, servers, behind NAT, everywhere.
  */
 
 #ifndef RGTP_H
 #define RGTP_H
+
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -30,142 +24,110 @@ typedef int socklen_t;
 #include <netinet/in.h>
 #endif
 
-#include <stdint.h>
-#include <stdbool.h>
+/* -------------------------------------------------------------------------- */
+/* Constants                                                                  */
+/* -------------------------------------------------------------------------- */
+#define RGTP_DEFAULT_PORT       443
+#define RGTP_MAX_CHUNK_SIZE     (1024 * 1024)   // 1 MB max
+#define RGTP_DEFAULT_CHUNK_SIZE (64 * 1024)     // 64 KB default
 
-// RGTP operates directly over IP (protocol number 253 - experimental)
-#define IPPROTO_RGTP 253
-#define RGTP_DEFAULT_PORT 9999
-
-// Exposure-based packet types
+/* -------------------------------------------------------------------------- */
+/* Packet types                                                               */
+/* -------------------------------------------------------------------------- */
 typedef enum {
-    RGTP_EXPOSE_REQUEST = 0x01,    // "I have data to expose"
-    RGTP_EXPOSE_MANIFEST = 0x02,   // "Here's what I'm exposing"
-    RGTP_CHUNK_AVAILABLE = 0x03,   // "Chunk X is ready for pull"
-    RGTP_PULL_REQUEST = 0x04,      // "Give me chunk X"
-    RGTP_CHUNK_DATA = 0x05,        // "Here's chunk X data"
-    RGTP_EXPOSURE_COMPLETE = 0x06, // "All chunks exposed"
-    RGTP_PULL_COMPLETE = 0x07,     // "All chunks received"
-    RGTP_ERROR = 0xFF
+    RGTP_HANDSHAKE          = 0x01,  // Future Noise_XX handshake (reserved)
+    RGTP_EXPOSE_MANIFEST    = 0x02,  // "I’m exposing this data"
+    RGTP_PULL_REQUEST       = 0x03,  // Bitmap or range of wanted chunks
+    RGTP_CHUNK_DATA         = 0x04,  // Encrypted chunk + tag
+    RGTP_PULL_ACK           = 0x05,  // Optional receiver feedback
+    RGTP_ERROR              = 0xFF
 } rgtp_packet_type_t;
 
-#ifdef _WIN32
-// Windows-compatible packed struct
+/* -------------------------------------------------------------------------- */
+/* Header — 48 bytes fixed                                                    */
+/* -------------------------------------------------------------------------- */
 #pragma pack(push, 1)
 typedef struct {
-    uint8_t version;           // Protocol version
-    uint8_t type;             // Packet type
-    uint16_t flags;           // Control flags
-    uint32_t session_id;      // Exposure session
-    uint32_t sequence;        // Chunk sequence number
-    uint32_t chunk_size;      // Size of this chunk
-    uint32_t checksum;        // Header + data checksum
+    uint8_t   version;           // 2
+    uint8_t   type;
+    uint16_t  flags;
+    uint64_t  exposure_id[2];    // 128-bit stateless identifier (the revolution)
+    uint64_t  total_size;        // Big-endian
+    uint32_t  chunk_count;       // Big-endian
+    uint32_t  chunk_size;        // Big-endian (optimal)
+    uint32_t  sequence_start;    // For CHUNK_DATA batches
+    uint32_t  sequence_count;    // Number of chunks in this packet
 } rgtp_header_t;
-
-// Exposure Manifest - describes what's being exposed
-typedef struct {
-    uint64_t total_size;      // Total data size
-    uint32_t chunk_count;     // Number of chunks
-    uint32_t optimal_chunk_size; // Recommended chunk size
-    uint16_t exposure_mode;   // Sequential, parallel, adaptive
-    uint16_t priority;        // Exposure priority
-    uint8_t content_hash[32]; // SHA-256 of complete data
-} rgtp_manifest_t;
 #pragma pack(pop)
-#else
-// RGTP Header (20 bytes - efficient)
-typedef struct __attribute__((packed)) {
-    uint8_t version;           // Protocol version
-    uint8_t type;             // Packet type
-    uint16_t flags;           // Control flags
-    uint32_t session_id;      // Exposure session
-    uint32_t sequence;        // Chunk sequence number
-    uint32_t chunk_size;      // Size of this chunk
-    uint32_t checksum;        // Header + data checksum
-} rgtp_header_t;
 
-// Exposure Manifest - describes what's being exposed
-typedef struct __attribute__((packed)) {
-    uint64_t total_size;      // Total data size
-    uint32_t chunk_count;     // Number of chunks
-    uint32_t optimal_chunk_size; // Recommended chunk size
-    uint16_t exposure_mode;   // Sequential, parallel, adaptive
-    uint16_t priority;        // Exposure priority
-    uint8_t content_hash[32]; // SHA-256 of complete data
-} rgtp_manifest_t;
-#endif
+/* -------------------------------------------------------------------------- */
+/* Exposure surface — the core data structure                                */
+/* -------------------------------------------------------------------------- */
+typedef struct rgtp_surface_s {
+    // Public — read-only for apps
+    uint64_t  exposure_id[2];
+    uint64_t  total_size;
+    uint32_t  chunk_count;
+    uint32_t  optimal_chunk_size;
 
-// Exposure Surface - the core innovation
-typedef struct {
-    uint32_t session_id;
-    rgtp_manifest_t manifest;
-    
-    // Chunk availability bitmap - this is the key innovation
-    uint8_t* chunk_bitmap;    // 1 bit per chunk (exposed/not exposed)
-    uint32_t bitmap_size;
-    
-    // Shared memory for direct access
-    void* shared_memory;      // Pointer to shared memory region
-    size_t shared_memory_size;// Size of shared memory region
-    
-    // Adaptive exposure control
-    uint32_t exposure_rate;   // Chunks per second
-    uint32_t congestion_window; // Like TCP cwnd but for exposure
-    uint32_t pull_pressure;   // How many pulls are pending
-    
-    // Performance metrics
-    uint64_t bytes_exposed;
-    uint64_t bytes_pulled;
-    uint32_t retransmissions;
-    
-    // Socket info
-    int sockfd;
-    struct sockaddr_in peer_addr;
+    // Private — internal crypto & state
+    uint8_t   send_key[32];
+    uint8_t   recv_key[32];
+
+    void**    encrypted_chunks;         // Pre-encrypted chunks (encrypt once!)
+    size_t*   encrypted_chunk_sizes;
+    uint8_t*  chunk_bitmap;             // 1 bit per chunk (received/exposed)
+
+    void*     shared_memory;            // For localhost DMA mode
+    size_t    shared_memory_size;
+
+    int       sockfd;
+    struct sockaddr_in peer;
+
+    // Stats
+    uint64_t  bytes_sent;
+    uint32_t  pull_pressure;
 } rgtp_surface_t;
 
-// Core RGTP functions
-int rgtp_socket(void);
-int rgtp_bind(int sockfd, uint16_t port);
-int rgtp_expose_data(int sockfd, const void* data, size_t size, 
-                     struct sockaddr_in* dest, rgtp_surface_t** surface);
-int rgtp_pull_data(int sockfd, struct sockaddr_in* source, 
-                   void* buffer, size_t* size);
-
-// Exposure control
-int rgtp_set_exposure_rate(rgtp_surface_t* surface, uint32_t chunks_per_sec);
-int rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct);
-int rgtp_adaptive_exposure(rgtp_surface_t* surface); // Auto-adjust based on network
-
-// Advanced features
-int rgtp_selective_pull(int sockfd, struct sockaddr_in* source, 
-                        uint32_t* chunk_ids, uint32_t count);
-int rgtp_parallel_exposure(rgtp_surface_t* surface, uint32_t thread_count);
-
-/**
- * @brief Get RGTP library version
- * @return Version string (e.g., "1.0.0")
- */
-const char* rgtp_version(void);
-
-/**
- * @brief Get RGTP build information
- * @return Build info string
- */
-const char* rgtp_build_info(void);
-
-/**
- * @brief Initialize RGTP library (call once per process)
- * @return 0 on success, -1 on error
- */
-int rgtp_init(void);
-
-/**
- * @brief Cleanup RGTP library (call before exit)
- */
-void rgtp_cleanup(void);
-
+/* -------------------------------------------------------------------------- */
+/* Public API — clean, minimal, future-proof                                  */
+/* -------------------------------------------------------------------------- */
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+// Library
+int         rgtp_init(void);
+void        rgtp_cleanup(void);
+const char* rgtp_version(void);         // Returns "2.0-udp"
+
+// Socket
+int         rgtp_socket(void);          // UDP socket on port 443
+int         rgtp_bind(int sockfd, uint16_t port);
+
+// Exposer side
+int         rgtp_expose_data(int sockfd,
+                             const void* data, size_t size,
+                             const struct sockaddr_in* dest,
+                             rgtp_surface_t** out_surface);
+
+int         rgtp_poll(rgtp_surface_t* surface, int timeout_ms);  // Call often
+void        rgtp_destroy_surface(rgtp_surface_t* surface);
+
+// Puller side
+int         rgtp_pull_start(int sockfd,
+                            const struct sockaddr_in* server,
+                            uint64_t exposure_id[2],
+                            rgtp_surface_t** out_surface);
+
+int         rgtp_pull_next(rgtp_surface_t* surface,
+                           void* buffer, size_t buffer_size,
+                           size_t* out_received);
+
+float       rgtp_progress(const rgtp_surface_t* surface);  // 0.0 → 1.0
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif // RGTP_H
