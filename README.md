@@ -104,7 +104,7 @@ cd red-giant && make -j
 | UDP transport stable    | This week  | In progress   |
 | Pre-encrypted chunks    | Next 7 days| In progress   |
 | Reed-Solomon FEC        | Jan 2026   | Alpha     |
-| WebTransport (browser)  | Feb 2026   | Planned   |
+| WebTransport (browser)  | Feb 2026   | Basic     |
 | HTTP/3 → RGTP proxy     | Mar 2026   | Planned   |
 | Linux kernel bypass (XDP)| 2026       | Dream     |
 
@@ -127,8 +127,8 @@ MIT — do whatever you want. Commercial use encouraged. Go make billions.
 
 ## Final Words
 
-We didn’t come here to improve TCP.  
-We came to make it obsolete.
+I didn’t come here to improve TCP.  
+I came to make it obsolete.
 
 **Red Giant** is the transport layer for the next Internet — the one where bandwidth is abundant, origins are cheap, and receivers are in control.
 
