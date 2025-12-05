@@ -36,6 +36,12 @@ typedef struct rgtp_surface_s {
     size_t* encrypted_chunk_sizes;
     uint8_t* chunk_bitmap;
 
+    // For puller: buffer to store received chunks in order
+    void** received_chunks;
+    size_t* received_chunk_sizes;
+    uint8_t* received_chunk_bitmap;
+    uint32_t next_expected_chunk;
+
     void* shared_memory;
     size_t    shared_memory_size;
 

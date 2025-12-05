@@ -273,10 +273,21 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
 
 void rgtp_destroy_surface(rgtp_surface_t* s) {
     if (!s) return;
+    
+    // Clean up exposer data
     for (uint32_t i = 0; i < s->chunk_count; i++) free(s->encrypted_chunks[i]);
     free(s->encrypted_chunks);
     free(s->encrypted_chunk_sizes);
     free(s->chunk_bitmap);
+    
+    // Clean up puller data
+    if (s->received_chunks) {
+        for (uint32_t i = 0; i < s->chunk_count; i++) free(s->received_chunks[i]);
+        free(s->received_chunks);
+        free(s->received_chunk_sizes);
+        free(s->received_chunk_bitmap);
+    }
+    
     free(s);
 }
 
@@ -292,6 +303,12 @@ int rgtp_pull_start(int sockfd, const struct sockaddr_in* server,
     s->peer = *server;
     s->exposure_id[0] = exposure_id[0];
     s->exposure_id[1] = exposure_id[1];
+    
+    // Initialize chunk reception buffers for ordering
+    s->next_expected_chunk = 0;
+    s->received_chunks = NULL;
+    s->received_chunk_sizes = NULL;
+    s->received_chunk_bitmap = NULL;
 
     uint8_t req[32] = { 0 };
     req[0] = 0xFE;
@@ -306,6 +323,54 @@ int rgtp_pull_start(int sockfd, const struct sockaddr_in* server,
     }
 
     *out_surface = s;
+    return 0;
+}
+
+// Helper function to initialize chunk buffers when manifest is received
+static void init_chunk_buffers(rgtp_surface_t* s) {
+    if (s->received_chunks) return; // Already initialized
+    
+    s->received_chunks = calloc(s->chunk_count, sizeof(void*));
+    s->received_chunk_sizes = calloc(s->chunk_count, sizeof(size_t));
+    s->received_chunk_bitmap = calloc((s->chunk_count + 7) / 8, 1);
+}
+
+// Helper function to write consecutive chunks to output
+static int write_consecutive_chunks(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* out_written) {
+    *out_written = 0;
+    size_t total_written = 0;
+    
+    while (s->next_expected_chunk < s->chunk_count) {
+        // Check if we have this chunk
+        uint32_t byte_index = s->next_expected_chunk / 8;
+        uint32_t bit_index = s->next_expected_chunk % 8;
+        
+        if (!(s->received_chunk_bitmap[byte_index] & (1 << bit_index))) {
+            // We don't have this chunk yet
+            break;
+        }
+        
+        // We have this chunk, write it
+        size_t chunk_size = s->received_chunk_sizes[s->next_expected_chunk];
+        if (total_written + chunk_size > buffer_size) {
+            // Not enough space in buffer
+            break;
+        }
+        
+        memcpy((uint8_t*)buffer + total_written, s->received_chunks[s->next_expected_chunk], chunk_size);
+        total_written += chunk_size;
+        
+        // Free the chunk data since we've written it
+        free(s->received_chunks[s->next_expected_chunk]);
+        s->received_chunks[s->next_expected_chunk] = NULL;
+        
+        // Clear the bitmap bit
+        s->received_chunk_bitmap[byte_index] &= ~(1 << bit_index);
+        
+        s->next_expected_chunk++;
+    }
+    
+    *out_written = total_written;
     return 0;
 }
 
@@ -334,19 +399,62 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
                 s->chunk_count = ntohl(*(uint32_t*)((uint8_t*)buffer + 24));
                 s->optimal_chunk_size = ntohl(*(uint32_t*)((uint8_t*)buffer + 28));
                 printf("Manifest OK — %.3f GB, %u chunks\n", s->total_size / 1e9, s->chunk_count);
+                
+                // Initialize chunk buffers
+                init_chunk_buffers(s);
+                
                 continue;
             }
         }
 
         if (n > 5 && ((uint8_t*)buffer)[0] == 0x01) {
+            // Extract chunk index
+            uint32_t chunk_index = ntohl(*(uint32_t*)((uint8_t*)buffer + 1));
             size_t payload = n - 5;
-            if (payload > buffer_size) payload = buffer_size;
-            memmove(buffer, (uint8_t*)buffer + 5, payload);
-            *out_received = payload;
-            s->bytes_sent += payload;
-            return 0;
+            
+            // Make sure we have valid chunk index
+            if (chunk_index >= s->chunk_count) {
+                continue;
+            }
+            
+            // Store chunk data if we haven't received it yet
+            uint32_t byte_index = chunk_index / 8;
+            uint32_t bit_index = chunk_index % 8;
+            
+            if (!(s->received_chunk_bitmap[byte_index] & (1 << bit_index))) {
+                // Allocate and store chunk data
+                s->received_chunks[chunk_index] = malloc(payload);
+                if (s->received_chunks[chunk_index]) {
+                    memcpy(s->received_chunks[chunk_index], (uint8_t*)buffer + 5, payload);
+                    s->received_chunk_sizes[chunk_index] = payload;
+                    s->received_chunk_bitmap[byte_index] |= (1 << bit_index);
+                    s->bytes_sent += payload;
+                }
+            }
+            
+            // Try to write consecutive chunks starting from next_expected_chunk
+            size_t written = 0;
+            write_consecutive_chunks(s, buffer, buffer_size, &written);
+            
+            if (written > 0) {
+                *out_received = written;
+                return 0;
+            }
+            
+            // No chunks to write right now, continue receiving
+            continue;
         }
     }
+    
+    // Check if we have any remaining consecutive chunks to write
+    size_t written = 0;
+    write_consecutive_chunks(s, buffer, buffer_size, &written);
+    
+    if (written > 0) {
+        *out_received = written;
+        return 0;
+    }
+    
     return -1;
 }
 
