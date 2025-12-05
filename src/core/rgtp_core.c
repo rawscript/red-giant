@@ -161,6 +161,75 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
             continue;
         }
 
+        // Check if this is a pull request (0xFE) before checking served list
+        if (n >= 1 && buf[0] == 0xFE) {
+            // Extract exposure ID from request
+            if (n >= 24) {  // Need at least 24 bytes for the full request with exposure ID at correct offset
+                uint64_t req_id[2];
+                memcpy(req_id, buf + 8, 16);  // Exposure ID starts at byte 8
+                
+                // Check if this request matches our exposure
+                if (req_id[0] == s->exposure_id[0] && req_id[1] == s->exposure_id[1]) {
+                    // Remove this client from served list so it can pull again
+                    served_client_t* cur = served_list;
+                    served_client_t* prev = NULL;
+                    while (cur) {
+                        if (memcmp(&cur->addr, &from, sizeof(from)) == 0) {
+                            if (prev) {
+                                prev->next = cur->next;
+                            } else {
+                                served_list = cur->next;
+                            }
+                            free(cur);
+                            break;
+                        }
+                        prev = cur;
+                        cur = cur->next;
+                    }
+                    
+                    // Send manifest and all chunks
+                    uint8_t manifest[48] = { 0 };
+                    *(uint64_t*)(manifest + 0) = htobe64(s->exposure_id[0]);
+                    *(uint64_t*)(manifest + 8) = htobe64(s->exposure_id[1]);
+                    *(uint64_t*)(manifest + 16) = htobe64(s->total_size);
+                    *(uint32_t*)(manifest + 24) = htonl(s->chunk_count);
+                    *(uint32_t*)(manifest + 28) = htonl(s->optimal_chunk_size);
+                    manifest[32] = 0xFF;
+                    sendto(s->sockfd, (char*)manifest, 48, 0, (struct sockaddr*)&from, fromlen);
+
+                    // Reset bytes_sent for this new transfer
+                    s->bytes_sent = 0;
+                    
+                    // Send chunks with small delays to prevent buffer overflow
+                    for (uint32_t i = 0; i < s->chunk_count; i++) {
+                        uint8_t pkt[1500];
+                        pkt[0] = 0x01;
+                        *(uint32_t*)(pkt + 1) = htonl(i);
+                        size_t sz = s->encrypted_chunk_sizes[i];
+                        memcpy(pkt + 5, s->encrypted_chunks[i], sz);
+                        sendto(s->sockfd, (char*)pkt, 5 + sz, 0, (struct sockaddr*)&from, fromlen);
+                        s->bytes_sent += sz;
+                        
+                        // Small delay every few chunks to prevent network buffer overflow
+                        if (i % 10 == 0) {
+#ifdef _WIN32
+                            Sleep(1);  // 1ms delay
+#else
+                            usleep(1000);  // 1ms delay
+#endif
+                        }
+                    }
+                    
+                    // Add client to served list after successful transmission
+                    mark_served(&from);
+                    s->pull_pressure++;
+                }
+            }
+            continue;
+        }
+
+        // Handle legacy requests (requests that might not start with 0xFE)
+        // These still use the served client logic for backward compatibility
         if (already_served(&from)) continue;
 
         s->pull_pressure++;
@@ -174,6 +243,10 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
         manifest[32] = 0xFF;
         sendto(s->sockfd, (char*)manifest, 48, 0, (struct sockaddr*)&from, fromlen);
 
+        // Reset bytes_sent for this new transfer
+        s->bytes_sent = 0;
+
+        // Send chunks with small delays to prevent buffer overflow
         for (uint32_t i = 0; i < s->chunk_count; i++) {
             uint8_t pkt[1500];
             pkt[0] = 0x01;
@@ -182,6 +255,15 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
             memcpy(pkt + 5, s->encrypted_chunks[i], sz);
             sendto(s->sockfd, (char*)pkt, 5 + sz, 0, (struct sockaddr*)&from, fromlen);
             s->bytes_sent += sz;
+            
+            // Small delay every few chunks to prevent network buffer overflow
+            if (i % 10 == 0) {
+#ifdef _WIN32
+                Sleep(1);  // 1ms delay
+#else
+                usleep(1000);  // 1ms delay
+#endif
+            }
         }
 
         mark_served(&from);

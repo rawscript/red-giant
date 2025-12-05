@@ -1,4 +1,4 @@
-// examples/c/udp_pull_file.c — FINAL, BIT-PERFECT PULLER (DEC 2025)
+// examples/c/udp_pull_file.c ï¿½ FINAL, BIT-PERFECT PULLER (DEC 2025)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,12 +52,14 @@ int main(int argc, char** argv) {
 
     while (rgtp_progress(surface) < 1.0f) {
         size_t received = 0;
-        if (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) == 0 && received > 0) {
+        // Process all available packets in this iteration
+        while (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) == 0 && received > 0) {
             fwrite(buffer, 1, received, out);
             total_written += received;
+            received = 0; // Reset for next iteration
         }
 
-        printf("\rProgress: %.3f / %.3f GB (%.1f%%) — speed: ~%.1f GB/s   ",
+        printf("\rProgress: %.3f / %.3f GB (%.1f%%)  speed: ~%.1f GB/s   ",
             total_written / 1e9,
             surface->total_size / 1e9,
             rgtp_progress(surface) * 100.0f,
