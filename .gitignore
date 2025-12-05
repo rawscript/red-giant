@@ -9,3 +9,6 @@
 *.exe
 *.vs
 *.github
+
+#local test:
+.rhezusport
