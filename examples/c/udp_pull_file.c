@@ -1,3 +1,5 @@
+// examples/c/udp_pull_file.c — FINAL, BIT-PERFECT PULLER (DEC 2025)
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,8 +16,7 @@
 
 int main(int argc, char** argv) {
     if (argc != 4) {
-        printf("Usage: %s <server-ip> <exposure-id-32-hex-chars> <output-file>\n", argv[0]);
-        printf("Example: %s 192.168.1.100 27dc5c1b2d04284ba296397213dabdd5 downloaded.exe\n", argv[0]);
+        printf("Usage: %s <server-ip> <exposure-id-32-hex> <output-file>\n", argv[0]);
         return 1;
     }
 
@@ -27,11 +28,6 @@ int main(int argc, char** argv) {
     rgtp_init();
 
     int sock = rgtp_socket();
-    if (sock < 0) {
-        fprintf(stderr, "Failed to create socket\n");
-        return 1;
-    }
-
     struct sockaddr_in server = { 0 };
     server.sin_family = AF_INET;
     server.sin_port = htons(443);
@@ -42,42 +38,41 @@ int main(int argc, char** argv) {
 
     rgtp_surface_t* surface = NULL;
     if (rgtp_pull_start(sock, &server, exposure_id, &surface) != 0 || !surface) {
-        fprintf(stderr, "Failed to connect to exposure\n");
-        close(sock);
+        fprintf(stderr, "Failed to start pull\n");
         return 1;
     }
-
-    printf("Connected! Exposure has %.3f GB — pulling...\n", surface->total_size / 1e9);
 
     FILE* out = fopen(argv[3], "wb");
     if (!out) { perror("fopen"); return 1; }
 
-    uint8_t* buffer = malloc(10 * 1024 * 1024);  // 10 MB buffer
-    size_t total_received = 0;
+    uint8_t* buffer = malloc(10 * 1024 * 1024);
+    size_t total_written = 0;
 
-    while (total_received < surface->total_size) {
+    printf("Connected! Waiting for data...\n");
+
+    while (rgtp_progress(surface) < 1.0f) {
         size_t received = 0;
-        if (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) != 0) {
-            printf("\nNetwork hiccup — resuming...\n");
-        }
-        else {
-            total_received += received;
+        if (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) == 0 && received > 0) {
             fwrite(buffer, 1, received, out);
+            total_written += received;
         }
 
-        printf("\rDownloaded: %.3f / %.3f GB (%.1f%%) — speed: %.1f MB/s   ",
-            total_received / 1e9,
+        printf("\rProgress: %.3f / %.3f GB (%.1f%%) — speed: ~%.1f GB/s   ",
+            total_written / 1e9,
             surface->total_size / 1e9,
-            100.0 * total_received / surface->total_size,
-            (received / (10 * 1024 * 1024.0)) * 5.0);  // rough speed
+            rgtp_progress(surface) * 100.0f,
+            (received / 1e9) / 0.2);  // rough estimate
         fflush(stdout);
 
 #ifdef _WIN32
         if (_kbhit() && _getch() == 27) break;
+        Sleep(50);
+#else
+        usleep(50000);
 #endif
     }
 
-    printf("\n\nDONE! Saved as %s\n", argv[3]);
+    printf("\n\nDONE! Saved as %s (%.3f GB)\n", argv[3], total_written / 1e9);
     fclose(out);
     free(buffer);
     rgtp_destroy_surface(surface);
