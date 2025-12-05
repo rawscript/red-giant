@@ -12,3 +12,5 @@
 
 #local test:
 .rhezusport
+#Local builds
+*.exe
