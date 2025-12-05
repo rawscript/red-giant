@@ -200,7 +200,7 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                     // Reset bytes_sent for this new transfer
                     s->bytes_sent = 0;
                     
-                    // Send chunks with small delays to prevent buffer overflow
+                    // Send chunks with small delays to prevent buffer overflow and reduce packet loss
                     for (uint32_t i = 0; i < s->chunk_count; i++) {
                         uint8_t pkt[1500];
                         pkt[0] = 0x01;
@@ -210,8 +210,8 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                         sendto(s->sockfd, (char*)pkt, 5 + sz, 0, (struct sockaddr*)&from, fromlen);
                         s->bytes_sent += sz;
                         
-                        // Small delay every few chunks to prevent network buffer overflow
-                        if (i % 10 == 0) {
+                        // Small delay every few chunks to prevent network buffer overflow and reduce packet loss
+                        if (i % 5 == 0) {  // More frequent delays
 #ifdef _WIN32
                             Sleep(1);  // 1ms delay
 #else
@@ -219,8 +219,7 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
 #endif
                         }
                     }
-                    
-                    // Add client to served list after successful transmission
+
                     mark_served(&from);
                     s->pull_pressure++;
                 }
@@ -246,7 +245,7 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
         // Reset bytes_sent for this new transfer
         s->bytes_sent = 0;
 
-        // Send chunks with small delays to prevent buffer overflow
+        // Send chunks with small delays to prevent buffer overflow and reduce packet loss
         for (uint32_t i = 0; i < s->chunk_count; i++) {
             uint8_t pkt[1500];
             pkt[0] = 0x01;
@@ -256,8 +255,8 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
             sendto(s->sockfd, (char*)pkt, 5 + sz, 0, (struct sockaddr*)&from, fromlen);
             s->bytes_sent += sz;
             
-            // Small delay every few chunks to prevent network buffer overflow
-            if (i % 10 == 0) {
+            // Small delay every few chunks to prevent network buffer overflow and reduce packet loss
+            if (i % 5 == 0) {  // More frequent delays
 #ifdef _WIN32
                 Sleep(1);  // 1ms delay
 #else
@@ -265,7 +264,7 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
 #endif
             }
         }
-
+        
         mark_served(&from);
     }
     return 0;
@@ -316,9 +315,9 @@ int rgtp_pull_start(int sockfd, const struct sockaddr_in* server,
     for (int i = 0; i < 5; i++) {
         sendto(sockfd, (char*)req, 32, 0, (struct sockaddr*)server, sizeof(*server));
 #ifdef _WIN32
-        Sleep(10);
+        Sleep(50);  // Increased delay to reduce packet loss
 #else
-        usleep(10000);
+        usleep(50000);  // Increased delay to reduce packet loss
 #endif
     }
 
@@ -333,6 +332,24 @@ static void init_chunk_buffers(rgtp_surface_t* s) {
     s->received_chunks = calloc(s->chunk_count, sizeof(void*));
     s->received_chunk_sizes = calloc(s->chunk_count, sizeof(size_t));
     s->received_chunk_bitmap = calloc((s->chunk_count + 7) / 8, 1);
+}
+
+// Helper function to check if all chunks have been received
+static int all_chunks_received(rgtp_surface_t* s) {
+    if (!s || !s->received_chunk_bitmap || s->chunk_count == 0) return 0;
+    
+    // Check if all chunks up to chunk_count have been received
+    for (uint32_t i = 0; i < s->chunk_count; i++) {
+        uint32_t byte_index = i / 8;
+        uint32_t bit_index = i % 8;
+        
+        if (!(s->received_chunk_bitmap[byte_index] & (1 << bit_index))) {
+            // This chunk hasn't been received yet
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
 // Helper function to write consecutive chunks to output
@@ -354,6 +371,12 @@ static int write_consecutive_chunks(rgtp_surface_t* s, void* buffer, size_t buff
         size_t chunk_size = s->received_chunk_sizes[s->next_expected_chunk];
         if (total_written + chunk_size > buffer_size) {
             // Not enough space in buffer
+            break;
+        }
+        
+        // Check if chunk data is valid
+        if (!s->received_chunks[s->next_expected_chunk]) {
+            // This shouldn't happen, but let's handle it gracefully
             break;
         }
         
@@ -408,6 +431,12 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
         }
 
         if (n > 5 && ((uint8_t*)buffer)[0] == 0x01) {
+            // Make sure we've received the manifest first
+            if (s->chunk_count == 0) {
+                // We haven't received the manifest yet, skip this chunk
+                continue;
+            }
+            
             // Extract chunk index
             uint32_t chunk_index = ntohl(*(uint32_t*)((uint8_t*)buffer + 1));
             size_t payload = n - 5;
@@ -423,12 +452,16 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
             
             if (!(s->received_chunk_bitmap[byte_index] & (1 << bit_index))) {
                 // Allocate and store chunk data
-                s->received_chunks[chunk_index] = malloc(payload);
-                if (s->received_chunks[chunk_index]) {
-                    memcpy(s->received_chunks[chunk_index], (uint8_t*)buffer + 5, payload);
+                void* chunk_data = malloc(payload);
+                if (chunk_data) {
+                    memcpy(chunk_data, (uint8_t*)buffer + 5, payload);
+                    s->received_chunks[chunk_index] = chunk_data;
                     s->received_chunk_sizes[chunk_index] = payload;
                     s->received_chunk_bitmap[byte_index] |= (1 << bit_index);
                     s->bytes_sent += payload;
+                } else {
+                    // Memory allocation failed, continue receiving other chunks
+                    continue;
                 }
             }
             
@@ -441,7 +474,8 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
                 return 0;
             }
             
-            // No chunks to write right now, continue receiving
+            // No chunks to write right now, but we received a chunk
+            // Continue receiving more chunks
             continue;
         }
     }
@@ -455,6 +489,12 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
         return 0;
     }
     
+    // Check if all chunks have been received
+    if (s->chunk_count > 0 && all_chunks_received(s)) {
+        return -1; // Signal end of transfer
+    }
+    
+    // No data available right now, but transfer not complete
     return -1;
 }
 

@@ -84,6 +84,12 @@ extern "C" {
         size_t* out_received);
 
     float       rgtp_progress(const rgtp_surface_t* surface);
+    
+    // Helper function to check if all chunks have been written
+    static inline int all_chunks_written(const rgtp_surface_t* surface) {
+        if (!surface || surface->chunk_count == 0) return 0;
+        return surface->next_expected_chunk >= surface->chunk_count;
+    }
 
 #ifdef __cplusplus
 }

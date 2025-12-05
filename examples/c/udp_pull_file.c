@@ -53,10 +53,17 @@ int main(int argc, char** argv) {
     while (rgtp_progress(surface) < 1.0f) {
         size_t received = 0;
         // Process all available packets in this iteration
-        while (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) == 0 && received > 0) {
+        int result;
+        while ((result = rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received)) == 0 && received > 0) {
             fwrite(buffer, 1, received, out);
             total_written += received;
             received = 0; // Reset for next iteration
+        }
+        
+        // Check if we've reached end of transfer
+        if (result == -1 && all_chunks_written(surface)) {
+            // End of transfer reached - all chunks have been processed
+            break;
         }
 
         printf("\rProgress: %.3f / %.3f GB (%.1f%%)  speed: ~%.1f GB/s   ",
@@ -72,6 +79,14 @@ int main(int argc, char** argv) {
 #else
         usleep(50000);
 #endif
+    }
+    
+    // Final flush to ensure all buffered chunks are written
+    size_t received = 0;
+    while (rgtp_pull_next(surface, buffer, 10 * 1024 * 1024, &received) == 0 && received > 0) {
+        fwrite(buffer, 1, received, out);
+        total_written += received;
+        received = 0;
     }
 
     printf("\n\nDONE! Saved as %s (%.3f GB)\n", argv[3], total_written / 1e9);
