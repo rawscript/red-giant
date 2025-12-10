@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+// Forward declaration
+struct sockaddr_in;
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -21,6 +24,32 @@ static inline uint64_t be64toh(uint64_t v) { return htobe64(v); }
 #endif
 
 /* -------------------------------------------------------------------------- */
+/* Configuration Structure                                                    */
+/* -------------------------------------------------------------------------- */
+typedef struct {
+    uint32_t chunk_size;              // Chunk size in bytes (0 = auto)
+    uint32_t exposure_rate;           // Initial exposure rate (chunks/sec)
+    bool adaptive_mode;               // Enable adaptive rate control
+    bool enable_compression;          // Enable data compression
+    bool enable_encryption;           // Enable encryption
+    uint16_t port;                   // Port number (0 = auto)
+    int timeout_ms;                  // Operation timeout in milliseconds
+    void* user_data;                 // User data for callbacks
+} rgtp_config_t;
+
+/* -------------------------------------------------------------------------- */
+/* Statistics Structure                                                       */
+/* -------------------------------------------------------------------------- */
+typedef struct {
+    uint64_t bytes_sent;
+    uint64_t bytes_received;
+    uint32_t chunks_sent;
+    uint32_t chunks_received;
+    float packet_loss_rate;
+    int rtt_ms;                      // Round-trip time in milliseconds
+} rgtp_stats_t;
+
+/* -------------------------------------------------------------------------- */
 /* Exposure surface — the core data structure                                */
 /* -------------------------------------------------------------------------- */
 typedef struct rgtp_surface_s {
@@ -28,6 +57,9 @@ typedef struct rgtp_surface_s {
     uint64_t  total_size;
     uint32_t  chunk_count;
     uint32_t  optimal_chunk_size;
+    
+    // Configuration
+    rgtp_config_t config;
 
     uint8_t   send_key[32];
     uint8_t   recv_key[32];
@@ -50,6 +82,19 @@ typedef struct rgtp_surface_s {
 
     uint64_t  bytes_sent;
     uint32_t  pull_pressure;
+    
+    // Statistics for adaptive rate control
+    uint64_t  bytes_received;
+    uint32_t  chunks_sent;
+    uint32_t  chunks_received;
+    uint32_t  acks_received;
+    uint32_t  packets_lost;
+    int       rtt_ms;
+    uint64_t  last_packet_time_ms;  // Last packet time in milliseconds
+    
+    // NAT traversal
+    bool      nat_traversal_enabled;
+    struct sockaddr_in public_addr;
 } rgtp_surface_t;
 
 /* -------------------------------------------------------------------------- */
@@ -71,6 +116,13 @@ extern "C" {
         const struct sockaddr_in* dest,
         rgtp_surface_t** out_surface);
 
+    // New function for exposing data with configuration
+    int         rgtp_expose_data_with_config(int sockfd,
+        const void* data, size_t size,
+        const struct sockaddr_in* dest,
+        const rgtp_config_t* config,
+        rgtp_surface_t** out_surface);
+
     int         rgtp_poll(rgtp_surface_t* surface, int timeout_ms);
     void        rgtp_destroy_surface(rgtp_surface_t* surface);
 
@@ -85,6 +137,14 @@ extern "C" {
 
     float       rgtp_progress(const rgtp_surface_t* surface);
     
+    // Statistics functions
+    int         rgtp_get_stats(const rgtp_surface_t* surface, rgtp_stats_t* stats);
+    
+    // NAT traversal functions
+    int         rgtp_enable_nat_traversal(rgtp_surface_t* surface);
+    int         rgtp_perform_hole_punching(rgtp_surface_t* surface, 
+        const struct sockaddr_in* peer_addr);
+
     // Helper function to check if all chunks have been written
     static inline int all_chunks_written(const rgtp_surface_t* surface) {
         if (!surface || surface->chunk_count == 0) return 0;

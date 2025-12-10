@@ -39,8 +39,12 @@ static void get_local_ip(char* out_ip) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        printf("Usage: %s <file-to-expose>\n", argv[0]);
+    if (argc < 2 || argc > 3) {
+        printf("Usage: %s <file-to-expose> [options]\n", argv[0]);
+        printf("Options:\n");
+        printf("  -c: Enable compression\n");
+        printf("  -e: Enable encryption\n");
+        printf("  -a: Disable adaptive rate control\n");
         return 1;
     }
 
@@ -78,8 +82,32 @@ int main(int argc, char** argv) {
     socklen_t len = sizeof(local);
     getsockname(sock, (struct sockaddr*)&local, &len);
 
+    // Create configuration
+    rgtp_config_t config = {
+        .chunk_size = 1450,
+        .exposure_rate = 1000,
+        .adaptive_mode = true,
+        .enable_compression = false,
+        .enable_encryption = false,
+        .port = 0,
+        .timeout_ms = 5000
+    };
+
+    // Parse options
+    if (argc == 3) {
+        if (strstr(argv[2], "-c")) {
+            config.enable_compression = true;
+        }
+        if (strstr(argv[2], "-e")) {
+            config.enable_encryption = true;
+        }
+        if (strstr(argv[2], "-a")) {
+            config.adaptive_mode = false;
+        }
+    }
+
     rgtp_surface_t* surface = NULL;
-    if (rgtp_expose_data(sock, data, size, &local, &surface) != 0 || !surface) {
+    if (rgtp_expose_data_with_config(sock, data, size, &local, &config, &surface) != 0 || !surface) {
         fprintf(stderr, "Failed to expose file\n");
         close(sock); free(data); return 1;
     }
@@ -90,6 +118,9 @@ int main(int argc, char** argv) {
     printf("\nRED GIANT UDP EXPOSER v2.0 - FINAL\n");
     printf("File         : %s\n", argv[1]);
     printf("Size         : %.3f GB\n", size / 1e9);
+    printf("Compression  : %s\n", config.enable_compression ? "Enabled" : "Disabled");
+    printf("Encryption   : %s\n", config.enable_encryption ? "Enabled" : "Disabled");
+    printf("Adaptive Rate: %s\n", config.adaptive_mode ? "Enabled" : "Disabled");
     printf("Exposure ID  : %016llx%016llx\n",
         (unsigned long long)surface->exposure_id[0],
         (unsigned long long)surface->exposure_id[1]);

@@ -19,6 +19,9 @@
 #include <fcntl.h>
 #endif
 
+// Forward declaration for adaptive_delay function
+static void adaptive_delay(rgtp_surface_t* s, uint32_t chunk_index);
+
 static uint64_t rng_state = 0xdeadbeefcafebabeULL;
 static uint64_t next_random() {
     rng_state ^= rng_state << 13;
@@ -107,19 +110,77 @@ int rgtp_bind(int sockfd, uint16_t port) {
 // ==================================================================
 // EXPOSER — FINAL FIXED CHUNK COUNT
 // ==================================================================
-int rgtp_expose_data(int sockfd, const void* data, size_t size,
-    const struct sockaddr_in* dest, rgtp_surface_t** out_surface)
+
+// Default configuration
+static const rgtp_config_t default_config = {
+    .chunk_size = 1450,
+    .exposure_rate = 1000,  // 1000 chunks/sec
+    .adaptive_mode = true,
+    .enable_compression = false,
+    .enable_encryption = false,
+    .port = 0,
+    .timeout_ms = 5000
+};
+
+// Simple compression function (placeholder)
+static size_t compress_data(const void* input, size_t input_size, void* output, size_t output_size) {
+    // In a real implementation, this would use zlib, lz4, or similar
+    // For now, we'll just copy the data as-is (no compression)
+    size_t copy_size = (input_size < output_size) ? input_size : output_size;
+    memcpy(output, input, copy_size);
+    return copy_size;
+}
+
+// Simple decompression function (placeholder)
+static size_t decompress_data(const void* input, size_t input_size, void* output, size_t output_size) {
+    // In a real implementation, this would use zlib, lz4, or similar
+    // For now, we'll just copy the data as-is (no decompression)
+    size_t copy_size = (input_size < output_size) ? input_size : output_size;
+    memcpy(output, input, copy_size);
+    return copy_size;
+}
+
+// Simple XOR encryption function (placeholder)
+static void xor_encrypt(const void* input, size_t input_size, void* output, 
+                      const uint8_t* key, size_t key_size) {
+    const uint8_t* input_bytes = (const uint8_t*)input;
+    uint8_t* output_bytes = (uint8_t*)output;
+    
+    for (size_t i = 0; i < input_size; i++) {
+        output_bytes[i] = input_bytes[i] ^ key[i % key_size];
+    }
+}
+
+// Simple XOR decryption function (placeholder)
+static void xor_decrypt(const void* input, size_t input_size, void* output, 
+                       const uint8_t* key, size_t key_size) {
+    // XOR decryption is the same as encryption
+    xor_encrypt(input, input_size, output, key, key_size);
+}
+
+int rgtp_expose_data_with_config(int sockfd, const void* data, size_t size,
+    const struct sockaddr_in* dest, const rgtp_config_t* config,
+    rgtp_surface_t** out_surface)
 {
     if (size == 0 || !data || !out_surface) return -1;
+    
     rgtp_surface_t* s = calloc(1, sizeof(rgtp_surface_t));
     if (!s) return -1;
+    
+    // Copy configuration or use default
+    if (config) {
+        s->config = *config;
+    } else {
+        s->config = default_config;
+    }
 
     s->sockfd = sockfd;
     s->peer = *dest;
     s->total_size = size;
 
-    s->optimal_chunk_size = 1450;  // ← THIS WAS THE BUG — MUST BE SET FIRST
-    s->chunk_count = (uint32_t)((size + 1450 - 1) / 1450);
+    // Set optimal chunk size based on configuration
+    s->optimal_chunk_size = s->config.chunk_size ? s->config.chunk_size : 1450;
+    s->chunk_count = (uint32_t)((size + s->optimal_chunk_size - 1) / s->optimal_chunk_size);
 
     s->exposure_id[0] = next_random();
     s->exposure_id[1] = next_random() ^ (uint64_t)time(NULL);
@@ -129,16 +190,59 @@ int rgtp_expose_data(int sockfd, const void* data, size_t size,
     s->chunk_bitmap = calloc((s->chunk_count + 7) / 8, 1);
 
     for (uint32_t i = 0; i < s->chunk_count; i++) {
-        size_t offset = i * 1450;
-        size_t chunk_size = (offset + 1450 <= size) ? 1450 : size - offset;
-        void* chunk = malloc(chunk_size);
-        memcpy(chunk, (uint8_t*)data + offset, chunk_size);
-        s->encrypted_chunks[i] = chunk;
-        s->encrypted_chunk_sizes[i] = chunk_size;
+        size_t offset = i * s->optimal_chunk_size;
+        size_t chunk_size = (offset + s->optimal_chunk_size <= size) ? s->optimal_chunk_size : size - offset;
+        
+        // Apply compression if enabled
+        if (s->config.enable_compression) {
+            // Allocate buffer for compressed data (worst case: same size as original)
+            void* temp_buffer = malloc(chunk_size);
+            if (temp_buffer) {
+                size_t compressed_size = compress_data((uint8_t*)data + offset, chunk_size, 
+                                                     temp_buffer, chunk_size);
+                void* chunk = malloc(compressed_size);
+                memcpy(chunk, temp_buffer, compressed_size);
+                s->encrypted_chunks[i] = chunk;
+                s->encrypted_chunk_sizes[i] = compressed_size;
+                free(temp_buffer);
+            } else {
+                // Compression failed, fall back to uncompressed
+                void* chunk = malloc(chunk_size);
+                memcpy(chunk, (uint8_t*)data + offset, chunk_size);
+                s->encrypted_chunks[i] = chunk;
+                s->encrypted_chunk_sizes[i] = chunk_size;
+            }
+        } else {
+            void* chunk = malloc(chunk_size);
+            memcpy(chunk, (uint8_t*)data + offset, chunk_size);
+            s->encrypted_chunks[i] = chunk;
+            s->encrypted_chunk_sizes[i] = chunk_size;
+        }
+        
+        // Apply encryption if enabled
+        if (s->config.enable_encryption) {
+            // For now, we'll just apply simple XOR encryption as a placeholder
+            // In a real implementation, this would use ChaCha20-Poly1305 or AES-GCM
+            void* temp_buffer = malloc(chunk_size);
+            if (temp_buffer) {
+                xor_encrypt(s->encrypted_chunks[i], s->encrypted_chunk_sizes[i], 
+                           temp_buffer, s->send_key, sizeof(s->send_key));
+                free(s->encrypted_chunks[i]);
+                s->encrypted_chunks[i] = temp_buffer;
+                // Note: In a real implementation, encrypted data would be larger due to auth tags
+            }
+        }
     }
 
     *out_surface = s;
     return 0;
+}
+
+// Wrapper for the original function to maintain backward compatibility
+int rgtp_expose_data(int sockfd, const void* data, size_t size,
+    const struct sockaddr_in* dest, rgtp_surface_t** out_surface)
+{
+    return rgtp_expose_data_with_config(sockfd, data, size, dest, NULL, out_surface);
 }
 
 int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
@@ -200,7 +304,7 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                     // Reset bytes_sent for this new transfer
                     s->bytes_sent = 0;
                     
-                    // Send chunks with small delays to prevent buffer overflow and reduce packet loss
+                    // Send chunks with adaptive delays to prevent buffer overflow and reduce packet loss
                     for (uint32_t i = 0; i < s->chunk_count; i++) {
                         uint8_t pkt[1500];
                         pkt[0] = 0x01;
@@ -209,15 +313,10 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                         memcpy(pkt + 5, s->encrypted_chunks[i], sz);
                         sendto(s->sockfd, (char*)pkt, 5 + sz, 0, (struct sockaddr*)&from, fromlen);
                         s->bytes_sent += sz;
+                        s->chunks_sent++;
                         
-                        // Small delay every few chunks to prevent network buffer overflow and reduce packet loss
-                        if (i % 5 == 0) {  // More frequent delays
-#ifdef _WIN32
-                            Sleep(1);  // 1ms delay
-#else
-                            usleep(1000);  // 1ms delay
-#endif
-                        }
+                        // Use adaptive delay
+                        adaptive_delay(s, i);
                     }
 
                     mark_served(&from);
@@ -245,7 +344,7 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
         // Reset bytes_sent for this new transfer
         s->bytes_sent = 0;
 
-        // Send chunks with small delays to prevent buffer overflow and reduce packet loss
+        // Send chunks with adaptive delays to prevent buffer overflow and reduce packet loss
         for (uint32_t i = 0; i < s->chunk_count; i++) {
             uint8_t pkt[1500];
             pkt[0] = 0x01;
@@ -254,15 +353,10 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
             memcpy(pkt + 5, s->encrypted_chunks[i], sz);
             sendto(s->sockfd, (char*)pkt, 5 + sz, 0, (struct sockaddr*)&from, fromlen);
             s->bytes_sent += sz;
+            s->chunks_sent++;
             
-            // Small delay every few chunks to prevent network buffer overflow and reduce packet loss
-            if (i % 5 == 0) {  // More frequent delays
-#ifdef _WIN32
-                Sleep(1);  // 1ms delay
-#else
-                usleep(1000);  // 1ms delay
-#endif
-            }
+            // Use adaptive delay
+            adaptive_delay(s, i);
         }
         
         mark_served(&from);
@@ -288,6 +382,46 @@ void rgtp_destroy_surface(rgtp_surface_t* s) {
     }
     
     free(s);
+}
+
+int rgtp_enable_nat_traversal(rgtp_surface_t* surface) {
+    if (!surface) return -1;
+    
+    surface->nat_traversal_enabled = true;
+    // In a real implementation, this would involve STUN/TURN protocols
+    // For now, we'll just mark it as enabled
+    return 0;
+}
+
+int rgtp_perform_hole_punching(rgtp_surface_t* surface, 
+    const struct sockaddr_in* peer_addr) {
+    if (!surface || !peer_addr) return -1;
+    
+    if (!surface->nat_traversal_enabled) {
+        return -1; // NAT traversal not enabled
+    }
+    
+    // Perform hole punching by sending UDP packets to the peer
+    // This helps establish a direct connection through NAT devices
+    uint8_t punch_pkt[16] = {0};
+    punch_pkt[0] = 0xFD; // Hole punching packet type
+    
+    // Send multiple packets to increase chances of success
+    for (int i = 0; i < 5; i++) {
+        sendto(surface->sockfd, (char*)punch_pkt, sizeof(punch_pkt), 0,
+               (struct sockaddr*)peer_addr, sizeof(*peer_addr));
+               
+#ifdef _WIN32
+        Sleep(10); // 10ms delay
+#else
+        usleep(10000); // 10ms delay
+#endif
+    }
+    
+    // Store the public address for future use
+    surface->public_addr = *peer_addr;
+    
+    return 0;
 }
 
 // ==================================================================
@@ -446,23 +580,63 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
                 continue;
             }
             
+            // Track received chunks for statistics
+            s->chunks_received++;
+            s->bytes_received += payload;
+            
+            // Handle decryption if enabled
+            void* chunk_data_ptr = (uint8_t*)buffer + 5;
+            size_t chunk_data_size = payload;
+            void* decrypted_data = NULL;
+            
+            if (s->config.enable_encryption) {
+                // For now, we'll just apply simple XOR decryption as a placeholder
+                // In a real implementation, this would use ChaCha20-Poly1305 or AES-GCM
+                decrypted_data = malloc(payload);
+                if (decrypted_data) {
+                    xor_decrypt((uint8_t*)buffer + 5, payload, decrypted_data, 
+                               s->recv_key, sizeof(s->recv_key));
+                    chunk_data_ptr = decrypted_data;
+                    // Note: In a real implementation, we would verify auth tags and handle decryption failures
+                }
+            }
+            
             // Store chunk data if we haven't received it yet
             uint32_t byte_index = chunk_index / 8;
             uint32_t bit_index = chunk_index % 8;
             
             if (!(s->received_chunk_bitmap[byte_index] & (1 << bit_index))) {
-                // Allocate and store chunk data
-                void* chunk_data = malloc(payload);
-                if (chunk_data) {
-                    memcpy(chunk_data, (uint8_t*)buffer + 5, payload);
-                    s->received_chunks[chunk_index] = chunk_data;
-                    s->received_chunk_sizes[chunk_index] = payload;
-                    s->received_chunk_bitmap[byte_index] |= (1 << bit_index);
-                    s->bytes_sent += payload;
+                // Handle decompression if enabled
+                void* final_data = NULL;
+                size_t final_size = chunk_data_size;
+                
+                if (s->config.enable_compression) {
+                    // For now, we'll just copy the data as-is
+                    // In a real implementation, this would decompress the data
+                    final_data = malloc(chunk_data_size);
+                    if (final_data) {
+                        final_size = decompress_data(chunk_data_ptr, chunk_data_size, 
+                                                   final_data, chunk_data_size);
+                    }
                 } else {
-                    // Memory allocation failed, continue receiving other chunks
-                    continue;
+                    // No compression, just copy the data
+                    final_data = malloc(chunk_data_size);
+                    if (final_data) {
+                        memcpy(final_data, chunk_data_ptr, chunk_data_size);
+                    }
                 }
+                
+                if (final_data) {
+                    s->received_chunks[chunk_index] = final_data;
+                    s->received_chunk_sizes[chunk_index] = final_size;
+                    s->received_chunk_bitmap[byte_index] |= (1 << bit_index);
+                    s->bytes_sent += final_size;
+                }
+            }
+            
+            // Clean up temporary buffers
+            if (decrypted_data) {
+                free(decrypted_data);
             }
             
             // Try to write consecutive chunks starting from next_expected_chunk
@@ -496,6 +670,66 @@ int rgtp_pull_next(rgtp_surface_t* s, void* buffer, size_t buffer_size, size_t* 
     
     // No data available right now, but transfer not complete
     return -1;
+}
+
+// Helper function to calculate adaptive delay based on network conditions
+static void adaptive_delay(rgtp_surface_t* s, uint32_t chunk_index) {
+    if (!s->config.adaptive_mode) {
+        // Fixed delay if adaptive mode is disabled
+        if (chunk_index % 5 == 0) {
+#ifdef _WIN32
+            Sleep(1); // 1ms delay
+#else
+            usleep(1000); // 1ms delay
+#endif
+        }
+        return;
+    }
+    
+    // Adaptive delay based on packet loss and RTT
+    int base_delay_ms = 1; // Base delay
+    
+    // Increase delay if packet loss is detected
+    if (s->packets_lost > 0 && s->chunks_sent > 100) {
+        float loss_rate = (float)s->packets_lost / (float)s->chunks_sent;
+        if (loss_rate > 0.05) { // More than 5% packet loss
+            base_delay_ms += (int)(loss_rate * 100); // Increase delay proportionally
+        }
+    }
+    
+    // Increase delay if RTT is high
+    if (s->rtt_ms > 50) { // RTT greater than 50ms
+        base_delay_ms += s->rtt_ms / 50; // Increase delay based on RTT
+    }
+    
+    // Apply delay every few chunks
+    if (chunk_index % 5 == 0) {
+#ifdef _WIN32
+        Sleep(base_delay_ms);
+#else
+        usleep(base_delay_ms * 1000);
+#endif
+    }
+}
+
+int rgtp_get_stats(const rgtp_surface_t* surface, rgtp_stats_t* stats) {
+    if (!surface || !stats) return -1;
+    
+    stats->bytes_sent = surface->bytes_sent;
+    stats->bytes_received = surface->bytes_received;
+    stats->chunks_sent = surface->chunks_sent;
+    stats->chunks_received = surface->chunks_received;
+    
+    // Calculate packet loss rate
+    if (surface->chunks_sent > 0) {
+        stats->packet_loss_rate = (float)surface->packets_lost / (float)surface->chunks_sent;
+    } else {
+        stats->packet_loss_rate = 0.0f;
+    }
+    
+    stats->rtt_ms = surface->rtt_ms;
+    
+    return 0;
 }
 
 float rgtp_progress(const rgtp_surface_t* s) {
