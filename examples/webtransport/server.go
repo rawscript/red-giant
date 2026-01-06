@@ -1,102 +1,63 @@
 // server.go
-// Red Giant WebTransport Server — December 2025
-// Serves file via WebTransport over HTTP/3 + QUIC on UDP 443
+// Red Giant HTTP Server - December 2025
+// Serves file via standard HTTP on TCP (no QUIC)
 
 package main
 
 import (
-    "context"
-    "flag"
-    "fmt"
-    "io"
-    "log"
-    "net/http"
-    "os"
-    "time"
+	"flag"
+	"log"
+	"net/http"
 
-    "crypto/tls"
+	"crypto/tls"
 
-    "github.com/quic-go/quic-go"
-    "github.com/quic-go/quic-go/http3"
-    "github.com/quic-go/webtransport-go"
-    "github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 var (
-    certFile = flag.String("tls-cert", "cert.pem", "TLS certificate file")
-    keyFile  = flag.String("tls-key", "key.pem", "TLS key file")
+	certFile = flag.String("tls-cert", "cert.pem", "TLS certificate file")
+	keyFile  = flag.String("tls-key", "key.pem", "TLS key file")
 )
 
 func main() {
-    flag.Parse()
+	flag.Parse()
 
-    if len(flag.Args()) == 0 {
-        log.Fatal("Usage: go run server.go -tls-cert cert.pem -tls-key key.pem <file-to-expose>")
-    }
-    filePath := flag.Args()[0]
+	if len(flag.Args()) == 0 {
+		log.Fatal("Usage: go run server.go -tls-cert cert.pem -tls-key key.pem <file-to-expose>")
+	}
+	filePath := flag.Args()[0]
 
-    file, err := os.Open(filePath)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer file.Close()
+	// Create router with chi
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
 
-    // Load TLS cert
-    cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
-    if err != nil {
-        log.Fatal(err)
-    }
+	// Serve the specific file
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filePath)
+	})
 
-    //mux := http.NewServeMux()
-    r := chi.NewRouter()
-    r.Use(middleware.Logger())
-    r.Get("/webtransport", func (w RensponseWriter, r *http.Request){
-        w.Header().Set("Content-Type","text/plain")
-        w.Write([]byte("WebTransport ready"))
-    }
-    )
-    /* mux.HandleFunc("/webtransport", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "text/plain")
-        fmt.Fprint(w, "WebTransport ready")
-    })
-    */
-    // HTTP/3 server
-    server := &http3.Server{
-        Addr: ":443",
-        TLSConfig: &tls.Config{
-            Certificates: []tls.Certificate{cert},
-            NextProtos:   []string{"h3"},
-        },
-        Handler: r,
-    }
+	// Load TLS cert for HTTPS
+	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    // WebTransport handler
-    wtServer := &webtransport.Server{
-        Server: server,
-    }
+	// Create HTTPS server using standard HTTP/TCP (no QUIC)
+	server := &http.Server{
+		Addr: ":8443", // Changed from 443 to 8443 to avoid requiring admin privileges
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			NextProtos:   []string{"http/1.1"}, // Explicitly use HTTP/1.1, not HTTP/3
+		},
+		Handler: r,
+	}
 
-    wtServer.BatonHandler = func(ctx context.Context, session *webtransport.Session) *webtransport.Baton {
-        // Accept unidirectional stream from client
-        stream, err := session.AcceptUnidirectionalStream(ctx)
-        if err != nil {
-            log.Printf("Failed to accept stream: %v", err)
-            return nil
-        }
+	log.Printf("HTTPS server running on :8443 - exposing %s", filePath)
+	log.Printf("Access from browser: https://localhost:8443/")
 
-        // Stream the file to the stream
-        _, err = io.Copy(stream, file)
-        if err != nil {
-            log.Printf("Failed to copy file to stream: %v", err)
-        }
-
-        return nil
-    }
-
-    log.Printf("WebTransport server running on :443 — exposing %s", filePath)
-    log.Printf("Connect from browser: new WebTransport('https://localhost:443/webtransport')")
-
-    if err := wtServer.Serve(); err != nil {
-        log.Fatal(err)
-    }
+	// Start HTTPS server (no QUIC/HTTP3/WebTransport)
+	if err := server.ListenAndServeTLS(*certFile, *keyFile); err != nil {
+		log.Fatal(err)
+	}
 }
