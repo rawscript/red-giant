@@ -19,6 +19,8 @@ import (
     "github.com/quic-go/quic-go"
     "github.com/quic-go/quic-go/http3"
     "github.com/quic-go/webtransport-go"
+    "github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 var (
@@ -46,12 +48,19 @@ func main() {
         log.Fatal(err)
     }
 
-    mux := http.NewServeMux()
-    mux.HandleFunc("/webtransport", func(w http.ResponseWriter, r *http.Request) {
+    //mux := http.NewServeMux()
+    r := chi.NewRouter()
+    r.Use(middleware.Logger())
+    r.Get("/webtransport", func (w RensponseWriter, r *http.Request){
+        w.Header().Set("Content-Type","text/plain")
+        w.Write([]byte("WebTransport ready"))
+    }
+    )
+    /* mux.HandleFunc("/webtransport", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Content-Type", "text/plain")
         fmt.Fprint(w, "WebTransport ready")
     })
-
+    */
     // HTTP/3 server
     server := &http3.Server{
         Addr: ":443",
@@ -59,7 +68,7 @@ func main() {
             Certificates: []tls.Certificate{cert},
             NextProtos:   []string{"h3"},
         },
-        Handler: mux,
+        Handler: r,
     }
 
     // WebTransport handler

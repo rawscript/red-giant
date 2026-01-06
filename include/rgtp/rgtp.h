@@ -73,6 +73,9 @@ typedef struct rgtp_surface_s {
     size_t* received_chunk_sizes;
     uint8_t* received_chunk_bitmap;
     uint32_t next_expected_chunk;
+    
+    // For puller: track received bytes for accurate progress
+    uint64_t  bytes_received;
 
     void* shared_memory;
     size_t    shared_memory_size;
@@ -84,7 +87,7 @@ typedef struct rgtp_surface_s {
     uint32_t  pull_pressure;
     
     // Statistics for adaptive rate control
-    uint64_t  bytes_received;
+    uint64_t  bytes_received_stats;
     uint32_t  chunks_sent;
     uint32_t  chunks_received;
     uint32_t  acks_received;
@@ -136,6 +139,9 @@ extern "C" {
         size_t* out_received);
 
     float       rgtp_progress(const rgtp_surface_t* surface);
+    
+    // New function for active puller polling
+    int         rgtp_puller_poll(rgtp_surface_t* surface, const struct sockaddr_in* server);
     
     // Statistics functions
     int         rgtp_get_stats(const rgtp_surface_t* surface, rgtp_stats_t* stats);
