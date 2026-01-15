@@ -1,8 +1,11 @@
 // src/core/rgtp_core.c
-// RED GIANT v2.1-REED-SOLOMON — FINAL, CLEAN, BIT-PERFECT
-// December 2025 — This version compiles and works perfectly. No more bugs. No more stuck pulls.
+// RED GIANT v3.0 — ENCRYPTION + MERKLE PROOFS
+// January 2026 — Enhanced with pre-encryption and integrity verification
 
 #include "rgtp/rgtp.h"
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
