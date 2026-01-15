@@ -209,8 +209,8 @@ const receiveStats = await rgtp.receiveFile('host', 9999, 'output.bin');
   ```bash
   npm run example              # Simple transfer
   npm run examples:server      # Interactive server
-  npm run examples:batch       # Batch downloader
-  npm run examples:monitor     # Performance monitor
+  npm run examples:client      # Batch downloader
+  npm run examples:http        # HTTP/Web3 adapter demo
   ```
 
 ## Troubleshooting
