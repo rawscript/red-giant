@@ -1,13 +1,16 @@
 {
   "name": "rgtp",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Red Giant Transport Protocol - High-performance UDP-based transport protocol",
   "main": "index.js",
   "scripts": {
     "build": "node-gyp rebuild",
     "install": "node-gyp rebuild",
     "test": "node test/test.js",
-    "prebuild": "npm run build"
+    "prebuild": "npm run build",
+    "example": "node examples/simple-transfer.js",
+    "examples:server": "node examples/server-demo.js",
+    "examples:client": "node examples/client-demo.js"
   },
   "keywords": [
     "udp",
