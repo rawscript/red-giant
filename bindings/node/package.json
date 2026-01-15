@@ -1,6 +1,6 @@
 {
   "name": "rgtp",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Red Giant Transport Protocol - High-performance UDP-based transport protocol",
   "main": "index.js",
   "scripts": {

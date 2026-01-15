@@ -185,6 +185,37 @@ new rgtp.Client(options)
 - `error` - Error occurred
 - `close` - Client closed
 
+## HTTP/Web3 Adapters
+
+The package includes adapters for familiar interfaces while using RGTP UDP core:
+
+### HTTP Adapter
+```javascript
+const { RGTPHTTPAdapter } = require('rgtp/http-adapter');
+
+const httpAdapter = new RGTPHTTPAdapter({
+  port: 8080,      // HTTP interface port
+  rgtpPort: 9999   // RGTP UDP port
+});
+
+await httpAdapter.start();
+// Visit http://localhost:8080 for file browser
+```
+
+### Web3/IPFS Interface
+```javascript
+const { RGTPWeb3Interface } = require('rgtp/http-adapter');
+
+const web3 = new RGTPWeb3Interface();
+
+// Add file (returns CID)
+const result = await web3.add('myfile.txt');
+console.log(`CID: ${result.cid}`);
+
+// Retrieve file by CID
+await web3.get(result.cid, 'output.txt');
+```
+
 ## Examples
 
 Run the included examples:
@@ -198,6 +229,9 @@ npm run examples:server
 
 # Client demo
 npm run examples:client
+
+# HTTP/Web3 adapter demo
+npm run examples:http
 ```
 
 ## Performance Tips
