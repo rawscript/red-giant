@@ -44,6 +44,20 @@ async function exposeFile() {
     adaptiveMode: true
   });
 
+  // Event listeners
+  session.on('exposeStart', (filePath, fileSize) => {
+    console.log(`Exposing ${filePath} (${fileSize} bytes)`);
+  });
+
+  session.on('progress', (transferred, total) => {
+    const percent = ((transferred / total) * 100).toFixed(1);
+    console.log(`Progress: ${percent}%`);
+  });
+
+  session.on('error', (error) => {
+    console.error('Session error:', error.message);
+  });
+
   try {
     await session.exposeFile('my-large-file.bin');
     console.log('File exposed successfully!');
