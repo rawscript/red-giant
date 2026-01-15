@@ -10,7 +10,8 @@
     "prebuild": "npm run build",
     "example": "node examples/simple-transfer.js",
     "examples:server": "node examples/server-demo.js",
-    "examples:client": "node examples/client-demo.js"
+    "examples:client": "node examples/client-demo.js",
+    "examples:http": "node examples/http-demo.js"
   },
   "keywords": [
     "udp",
