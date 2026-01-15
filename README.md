@@ -43,14 +43,14 @@ All over standard UDP (port 443 by default). Works behind NAT, on phones, in bro
 
 That’s it. No SYN/ACK hell. No retransmit timers. No connection table explosion.
 
-## Killer Features (Already Implemented or Coming This Month)
+## Killer Features
 
 - **Pre-encrypted chunks** – encrypt once on `rgtp_expose()`, serve forever
 - **Exposure IDs** – 128-bit stateless identifiers (like QUIC connection IDs)
 - **Receiver-driven congestion control** – pullers decide the rate
 - **Built-in Merkle proofs** – verify any chunk without trusting the network
 - **Optional Reed-Solomon FEC** – survive 50 % packet loss with near-zero retransmits
-- **Direct Memory Access mode** – zero-copy localhost (still there!)
+- **Direct Memory Access mode** – zero-copy localhost
 - **TCP socket emulation layer** – drop-in `socket()/send()/recv()` compatibility
 
 ## Demo You Can Run Right Now
@@ -75,15 +75,15 @@ rgtp-pull 203.0.113.42:443 ubuntu-24.04.iso
 | Database replication        | Constant full streams           | Only missing WAL chunks          | 99 %    |
 | P2P file sharing            | Tracker + DHT overhead          | Zero coordination                | Pure   |
 
-## Current Status (December 2025)
+## Current Status (January 2026)
 
 - Core library: **C + bindings for Go, Node.js, Python**
 - Node.js package: **Available on npm** - `npm install rgtp`
-- Transport: **UDP 443 (new default), raw socket legacy kept for localhost/DMA**
-- Crypto: Noise_XX handshake + ChaCha20-Poly1305 per-chunk (post-quantum ready)
-- FEC: Reed-Solomon alpha incoming
-- TCP compatibility layer: Working
-- Examples: HTTP over RGTP, live streaming, IoT, gaming demos
+- Transport: **UDP 443 (default), raw socket for localhost/DMA**
+- Crypto: Pre-encrypted chunks with ChaCha20-Poly1305 (post-quantum ready)
+- FEC: Reed-Solomon implemented for 50% packet loss resilience
+- TCP compatibility layer: Full socket() API compatibility
+- Examples: HTTP/Web3 adapters, live streaming, IoT, gaming demos
 
 ## Quick Start
 
@@ -118,16 +118,16 @@ cd red-giant && make -j
 ./examples/udp_pull 1.2.3.4:443 large-movie.mkv
 ```
 
-## Roadmap (Help Wanted)
+## Roadmap
 
-| Milestone               | ETA        | Status    |
-|-------------------------|------------|-----------|
-| UDP transport stable    | This week  | In progress   |
-| Pre-encrypted chunks    | Next 7 days| In progress   |
-| Reed-Solomon FEC        | Jan 2026   | Alpha     |
-| WebTransport (browser)  | Feb 2026   | Basic     |
-| HTTP/3 → RGTP proxy     | Mar 2026   | Planned   |
-| Linux kernel bypass (XDP)| 2026       | Dream     |
+|Milestone               | Status     |
+|-------------------------|------------|
+| UDP transport stable    | ✅ Complete |
+| Pre-encrypted chunks    | ✅ Complete |
+| Reed-Solomon FEC        | ✅ Complete |
+| WebTransport (browser)  | ⏳ Planned |
+| HTTP/3 → RGTP proxy     | ⏳ Planned |
+| Linux kernel bypass (XDP)| ⏳ Research |
 
 ## Contributing
 

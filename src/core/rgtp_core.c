@@ -423,3 +423,116 @@ int rgtp_puller_poll(rgtp_surface_t* s, const struct sockaddr_in* server) {
     memcpy(req + 8, s->exposure_id, 16);
     return sendto(s->sockfd, (char*)req, 32, 0, (struct sockaddr*)server, sizeof(*server));
 }
+
+// Add encryption support to the core C implementation
+#include <sodium.h> // For crypto operations
+
+// Encryption context structure
+typedef struct {
+    uint8_t key[32];
+    uint8_t nonce[24];
+    uint64_t counter;
+} rgtp_crypto_ctx_t;
+
+// Pre-encrypt chunks during exposure
+int rgtp_expose_with_encryption(int sockfd,
+    const void* data, size_t size,
+    const struct sockaddr_in* dest,
+    const rgtp_config_t* config,
+    rgtp_surface_t** out_surface) {
+    
+    if (!data || size == 0 || !out_surface) {
+        return -1;
+    }
+    
+    // Initialize libsodium
+    if (sodium_init() == -1) {
+        return -1;
+    }
+    
+    // Create surface
+    rgtp_surface_t* s = calloc(1, sizeof(rgtp_surface_t));
+    if (!s) return -1;
+    
+    s->total_size = size;
+    s->chunk_count = (uint32_t)((size + 1450 - 1) / 1450);
+    s->optimal_chunk_size = 1450;
+    
+    // Generate encryption key and nonce
+    randombytes_buf(s->send_key, 32);
+    randombytes_buf(s->recv_key, 32);
+    
+    // Copy config
+    if (config) {
+        s->config = *config;
+    } else {
+        s->config = default_config;
+    }
+    
+    // Generate exposure ID (128-bit)
+    s->exposure_id[0] = randombytes_random();
+    s->exposure_id[1] = randombytes_random() ^ (uint64_t)time(NULL);
+    
+    // Pre-encrypt all chunks
+    s->encrypted_chunks = calloc(s->chunk_count, sizeof(void*));
+    s->encrypted_chunk_sizes = calloc(s->chunk_count, sizeof(size_t));
+    
+    const uint8_t* src = (const uint8_t*)data;
+    uint8_t nonce[24] = {0};
+    
+    for (uint32_t i = 0; i < s->chunk_count; i++) {
+        size_t offset = i * 1450;
+        size_t chunk_size = (offset + 1450 <= size) ? 1450 : size - offset;
+        
+        // Create nonce for this chunk
+        STORE64_LE(nonce, i);
+        
+        // Allocate buffer for encrypted chunk (plaintext + auth tag)
+        size_t encrypted_size = chunk_size + crypto_aead_chacha20poly1305_ABYTES;
+        uint8_t* encrypted_chunk = malloc(encrypted_size);
+        
+        // Encrypt chunk
+        if (crypto_aead_chacha20poly1305_encrypt(
+            encrypted_chunk, NULL,
+            src + offset, chunk_size,
+            NULL, 0,
+            NULL, nonce,
+            s->send_key) != 0) {
+            
+            // Cleanup on encryption failure
+            free(encrypted_chunk);
+            rgtp_destroy_surface(s);
+            return -1;
+        }
+        
+        s->encrypted_chunks[i] = encrypted_chunk;
+        s->encrypted_chunk_sizes[i] = encrypted_size;
+    }
+    
+    *out_surface = s;
+    return 0;
+}
+
+// Decrypt chunk during pull
+int rgtp_decrypt_chunk(const uint8_t* encrypted_data, size_t encrypted_size,
+    uint8_t* decrypted_data, size_t* decrypted_size,
+    uint64_t chunk_index, const uint8_t* key) {
+    
+    uint8_t nonce[24] = {0};
+    STORE64_LE(nonce, chunk_index);
+    
+    unsigned long long decrypted_len;
+    int result = crypto_aead_chacha20poly1305_decrypt(
+        decrypted_data, &decrypted_len,
+        NULL,
+        encrypted_data, encrypted_size,
+        NULL, 0,
+        nonce, key);
+    
+    if (result == 0) {
+        *decrypted_size = (size_t)decrypted_len;
+        return 0;
+    }
+    
+    return -1;
+}
