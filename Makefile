@@ -36,7 +36,7 @@ LDFLAGS = -L$(LIB_DIR)
 LIBS = -lrgtp -lpthread -lm
 
 # Source files
-CORE_SOURCES = $(wildcard $(SRC_DIR)/core/*.c)
+CORE_SOURCES = $(SRC_DIR)/core/rgtp_core.c
 CORE_OBJECTS = $(CORE_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Library targets

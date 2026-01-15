@@ -126,6 +126,13 @@ extern "C" {
         const rgtp_config_t* config,
         rgtp_surface_t** out_surface);
 
+    // New functions for enhanced features
+    void        rgtp_generate_exposure_id(uint64_t id[2]);
+    void        rgtp_xor_encrypt(const uint8_t* input, size_t len, 
+                     uint8_t* output, uint64_t counter,
+                     const uint8_t key[32]);
+    uint32_t    rgtp_hash_chunk(const uint8_t* data, size_t len);
+
     int         rgtp_poll(rgtp_surface_t* surface, int timeout_ms);
     void        rgtp_destroy_surface(rgtp_surface_t* surface);
 

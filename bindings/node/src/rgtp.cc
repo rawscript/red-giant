@@ -94,6 +94,20 @@ Napi::Value DestroySurface(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
+// Generate exposure ID
+Napi::Value GenerateExposureID(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    
+    uint64_t id[2];
+    rgtp_generate_exposure_id(id);
+    
+    // Return as hex string
+    char hex_str[33]; // 32 hex chars + null terminator
+    sprintf(hex_str, "%016llx%016llx", (unsigned long long)id[0], (unsigned long long)id[1]);
+    
+    return Napi::String::New(env, hex_str);
+}
+
 // Initialize the addon
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set(Napi::String::New(env, "init"), Napi::Function::New(env, Init));
@@ -104,6 +118,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set(Napi::String::New(env, "exposeData"), Napi::Function::New(env, ExposeData));
     exports.Set(Napi::String::New(env, "poll"), Napi::Function::New(env, Poll));
     exports.Set(Napi::String::New(env, "destroySurface"), Napi::Function::New(env, DestroySurface));
+    exports.Set(Napi::String::New(env, "generateExposureID"), Napi::Function::New(env, GenerateExposureID));
     
     return exports;
 }

@@ -118,6 +118,43 @@ int rgtp_init(void) {
 #endif
 }
 
+// Generate 128-bit exposure ID
+void rgtp_generate_exposure_id(uint64_t id[2]) {
+    static uint32_t seed = 0;
+    if (seed == 0) {
+#ifdef _WIN32
+        seed = (uint32_t)GetTickCount();
+#else
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        seed = (uint32_t)(tv.tv_sec * 1000000 + tv.tv_usec);
+#endif
+    }
+    seed = seed * 1103515245 + 12345;
+    
+    id[0] = ((uint64_t)seed << 32) | (seed >> 16);
+    id[1] = ((uint64_t)(seed * 1103515245 + 12345) << 32) | time(NULL);
+}
+
+// Simple XOR encryption for pre-encryption
+void rgtp_xor_encrypt(const uint8_t* input, size_t len, 
+                     uint8_t* output, uint64_t counter,
+                     const uint8_t key[32]) {
+    for (size_t i = 0; i < len; i++) {
+        output[i] = input[i] ^ key[i % 32] ^ (uint8_t)(counter >> (i % 8));
+    }
+}
+
+// Simple hash for Merkle tree construction
+uint32_t rgtp_hash_chunk(const uint8_t* data, size_t len) {
+    uint32_t hash = 0x811C9DC5; // FNV-1a offset basis
+    for (size_t i = 0; i < len; i++) {
+        hash ^= data[i];
+        hash *= 0x01000193; // FNV prime
+    }
+    return hash;
+}
+
 void rgtp_cleanup(void) {
 #ifdef _WIN32
     WSACleanup();
