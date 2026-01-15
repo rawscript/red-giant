@@ -4,32 +4,19 @@ This guide will help you get up and running with RGTP Node.js bindings quickly.
 
 ## Installation
 
-### Prerequisites
-
-- Node.js 14.0.0 or higher
-- npm 6.0.0 or higher
-- Native compilation tools (for building the native module)
-
-#### Windows
-```bash
-npm install --global windows-build-tools
-```
-
-#### macOS
-```bash
-xcode-select --install
-```
-
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt-get install build-essential python3-dev
-```
-
-### Install RGTP
+### Quick Install
 
 ```bash
 npm install rgtp
 ```
+
+### Prerequisites
+
+- Node.js 14.0.0 or higher
+- npm 6.0.0 or higher
+- Build tools (automatically handled)
+
+The package includes pre-built binaries for all major platforms.
 
 ## Basic Usage
 

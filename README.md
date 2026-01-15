@@ -78,22 +78,43 @@ rgtp-pull 203.0.113.42:443 ubuntu-24.04.iso
 ## Current Status (December 2025)
 
 - Core library: **C + bindings for Go, Node.js, Python**
+- Node.js package: **Available on npm** - `npm install rgtp`
 - Transport: **UDP 443 (new default), raw socket legacy kept for localhost/DMA**
 - Crypto: Noise_XX handshake + ChaCha20-Poly1305 per-chunk (post-quantum ready)
 - FEC: Reed-Solomon alpha incoming
 - TCP compatibility layer: Working
 - Examples: HTTP over RGTP, live streaming, IoT, gaming demos
 
-## Quick Start (After UDP Merge – 2025 Edition)
+## Quick Start
+
+### Option 1: Node.js (Recommended)
+
+```bash
+npm install rgtp
+```
+
+```javascript
+const rgtp = require('rgtp');
+
+// Server side
+const session = new rgtp.Session({ port: 9999 });
+await session.exposeFile('large-file.bin');
+
+// Client side
+const client = new rgtp.Client();
+await client.pullToFile('localhost', 9999, 'downloaded.bin');
+```
+
+### Option 2: C Library
 
 ```bash
 git clone https://github.com/rawscript/red-giant.git
 cd red-giant && make -j
 
-# Expose a 50 GB file on port 443
+# Expose a file
 ./examples/udp_expose_file large-movie.mkv --port 443
 
-# Pull from another continent
+# Pull a file
 ./examples/udp_pull 1.2.3.4:443 large-movie.mkv
 ```
 
