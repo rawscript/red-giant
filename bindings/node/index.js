@@ -17,13 +17,15 @@ class RGTPSession extends EventEmitter {
     this.options = {
       port: options.port || 0,
       chunkSize: options.chunkSize || 1024 * 1024,
+      exposureRate: options.exposureRate || 1000,
       adaptiveMode: options.adaptiveMode !== false,
+      enableCompression: options.enableCompression || false,
+      enableEncryption: options.enableEncryption || false,
       timeout: options.timeout || 30000,
       ...options
     };
     
-    this.socket = null;
-    this.surface = null;
+    this.sessionHandle = null;
     this.isClosed = false;
     this.stats = {
       bytesTransferred: 0,
