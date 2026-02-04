@@ -42,16 +42,10 @@ class RGTPSession extends EventEmitter {
       throw new Error(`Failed to initialize RGTP: ${result}`);
     }
     
-    this.socket = rgtp.socket();
-    if (this.socket < 0) {
-      throw new Error('Failed to create UDP socket');
-    }
-    
-    if (this.options.port > 0) {
-      const bindResult = rgtp.bind(this.socket, this.options.port);
-      if (bindResult !== 0) {
-        throw new Error(`Failed to bind to port ${this.options.port}`);
-      }
+    // Create session using new high-level API
+    this.sessionHandle = rgtp.sessionCreate(this.options);
+    if (!this.sessionHandle) {
+      throw new Error('Failed to create RGTP session');
     }
   }
   
@@ -61,16 +55,15 @@ class RGTPSession extends EventEmitter {
     }
     
     try {
-      const data = await fs.readFile(filePath);
-      this.surface = rgtp.exposeData(data, this.socket);
+      this.emit('exposeStart', filePath);
       
-      if (this.surface === -1) {
+      // Use new session-based API
+      const result = rgtp.sessionExposeFile(this.sessionHandle, filePath);
+      if (result !== 0) {
         throw new Error('Failed to expose file');
       }
       
-      this.emit('exposeStart', filePath, data.length);
-      
-      // Poll for events
+      // Start polling for progress updates
       this._startPolling();
       
     } catch (error) {
@@ -80,26 +73,31 @@ class RGTPSession extends EventEmitter {
   }
   
   _startPolling() {
-    if (this.isClosed || !this.surface) return;
+    if (this.isClosed || !this.sessionHandle) return;
     
     const poll = () => {
       if (this.isClosed) return;
       
-      const result = rgtp.poll(this.surface, 100);
-      
-      if (result > 0) {
-        // Transfer activity detected
-        this.stats.bytesTransferred += result;
-        this._updateStats();
-        this.emit('progress', this.stats.bytesTransferred, this.stats.totalSize || 0);
-      } else if (result < 0) {
-        // Error occurred
-        this.emit('error', new Error(`Poll error: ${result}`));
-        return;
+      try {
+        const stats = rgtp.sessionGetStats(this.sessionHandle);
+        if (stats) {
+          this.stats.bytesTransferred = stats.bytesSent || 0;
+          this.stats.totalSize = stats.totalSize || 0;
+          this._updateStats();
+          this.emit('progress', this.stats.bytesTransferred, this.stats.totalSize);
+          
+          // Check completion
+          if (stats.completionPercent >= 100) {
+            this.emit('complete');
+            return;
+          }
+        }
+      } catch (error) {
+        this.emit('error', error);
       }
       
       // Continue polling
-      setTimeout(poll, 10);
+      setTimeout(poll, 100);
     };
     
     poll();
