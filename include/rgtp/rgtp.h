@@ -47,7 +47,41 @@ typedef struct {
     uint32_t chunks_received;
     float packet_loss_rate;
     int rtt_ms;                      // Round-trip time in milliseconds
+    uint32_t packets_lost;
+    uint32_t retransmissions;
+    float avg_throughput_mbps;
+    float completion_percent;
+    uint32_t active_connections;
 } rgtp_stats_t;
+
+/* -------------------------------------------------------------------------- */
+/* Session Management Structures                                              */
+/* -------------------------------------------------------------------------- */
+typedef struct rgtp_session {
+    int sockfd;
+    rgtp_config_t config;
+    rgtp_surface_t* active_surface;
+    bool is_exposing;
+    bool is_running;
+    void* user_data;
+    // Callbacks
+    void (*on_progress)(size_t transferred, size_t total, void* user_data);
+    void (*on_complete)(void* user_data);
+    void (*on_error)(int error_code, const char* message, void* user_data);
+} rgtp_session_t;
+
+typedef struct rgtp_client {
+    int sockfd;
+    rgtp_config_t config;
+    rgtp_surface_t* active_surface;
+    bool is_connected;
+    bool is_running;
+    void* user_data;
+    // Callbacks
+    void (*on_progress)(size_t received, size_t total, void* user_data);
+    void (*on_complete)(const char* filename, void* user_data);
+    void (*on_error)(int error_code, const char* message, void* user_data);
+} rgtp_client_t;
 
 /* -------------------------------------------------------------------------- */
 /* Exposure surface — the core data structure                                */
