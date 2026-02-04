@@ -285,6 +285,10 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
     uint8_t buf[2048];
     struct sockaddr_in from;
     socklen_t fromlen = sizeof(from);
+    
+    // RTT measurement variables
+    static uint64_t last_send_time = 0;
+    static struct sockaddr_in last_peer_addr = {0};
 
     while (1) {
         ssize_t n = recvfrom(s->sockfd, (char*)buf, sizeof(buf), MSG_DONTWAIT,
@@ -316,6 +320,11 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                 *(uint32_t*)(manifest + 24) = htonl(s->chunk_count);
                 *(uint32_t*)(manifest + 28) = htonl(1450);
                 manifest[32] = 0xFF;
+                
+                // Record send time for RTT measurement
+                last_send_time = time(NULL) * 1000 + (clock() % 1000);
+                last_peer_addr = from;
+                
                 sendto(s->sockfd, (char*)manifest, 48, 0, (struct sockaddr*)&from, fromlen);
                 
                 // Send chunks with adaptive rate control
@@ -344,6 +353,15 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
             if (be64toh(*(uint64_t*)(buf + 0)) == s->exposure_id[0] &&
                 be64toh(*(uint64_t*)(buf + 8)) == s->exposure_id[1]) {
                 s->pull_pressure++;
+                
+                // Calculate RTT if this is a response from the same peer
+                if (last_send_time > 0 && 
+                    memcmp(&from, &last_peer_addr, sizeof(from)) == 0) {
+                    uint64_t current_time = time(NULL) * 1000 + (clock() % 1000);
+                    s->rtt_ms = (int)(current_time - last_send_time);
+                    // Reset for next measurement
+                    last_send_time = 0;
+                }
                 
                 uint8_t manifest[48] = { 0 };
                 *(uint64_t*)(manifest + 0) = htobe64(s->exposure_id[0]);
@@ -487,8 +505,26 @@ static uint32_t calculate_adaptive_rate(rgtp_surface_t* s) {
         target_rate = (uint32_t)(target_rate * (1.0 + (s->pull_pressure * 0.1)));
     }
     
-    // Adjust based on packet loss (if we had loss tracking)
-    // This would use s->packets_lost and s->chunks_sent
+    // Adjust based on packet loss
+    if (s->chunks_sent > 0) {
+        float loss_rate = (float)s->packets_lost / (float)s->chunks_sent;
+        if (loss_rate > 0.05) {  // 5% loss threshold
+            // Reduce rate significantly on high packet loss
+            target_rate = (uint32_t)(target_rate * (1.0 - (loss_rate * 2.0)));
+        } else if (loss_rate > 0.01) {  // 1% loss threshold
+            // Moderate reduction on low packet loss
+            target_rate = (uint32_t)(target_rate * 0.9);
+        }
+    }
+    
+    // Adjust based on RTT if available
+    if (s->rtt_ms > 0) {
+        if (s->rtt_ms > 100) {  // High latency
+            target_rate = (uint32_t)(target_rate * 0.8);  // Reduce rate
+        } else if (s->rtt_ms < 20) {  // Low latency
+            target_rate = (uint32_t)(target_rate * 1.1);  // Increase rate
+        }
+    }
     
     // Apply reasonable limits
     if (target_rate > s->chunk_count) {
