@@ -532,6 +532,30 @@ int rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct) {
     return 0;
 }
 
+// Session management implementation
+
+rgtp_session_t* rgtp_session_create(const rgtp_config_t* config) {
+    rgtp_session_t* session = calloc(1, sizeof(rgtp_session_t));
+    if (!session) return NULL;
+    
+    // Initialize config
+    if (config) {
+        session->config = *config;
+    } else {
+        session->config = default_config;
+    }
+    
+    // Create socket
+    session->sockfd = rgtp_socket();
+    if (session->sockfd < 0) {
+        free(session);
+        return NULL;
+    }
+    
+    session->is_running = true;
+    return session;
+}
+
 // Encryption context structure
 typedef struct {
     uint8_t key[32];
@@ -640,4 +664,238 @@ int rgtp_decrypt_chunk(const uint8_t* encrypted_data, size_t encrypted_size,
     }
     
     return -1;
+}
+
+// Additional session management functions
+
+int rgtp_session_wait_complete(rgtp_session_t* session) {
+    if (!session || !session->is_exposing || !session->active_surface) {
+        return -1;
+    }
+    
+    // Poll until completion or timeout
+    time_t start_time = time(NULL);
+    while (session->is_running && session->active_surface) {
+        rgtp_poll(session->active_surface, 100);
+        
+        // Check completion
+        float progress = rgtp_progress(session->active_surface);
+        if (progress >= 1.0f) {
+            if (session->on_complete) {
+                session->on_complete(session->user_data);
+            }
+            break;
+        }
+        
+        // Check timeout
+        if (session->config.timeout_ms > 0 && 
+            (time(NULL) - start_time) * 1000 > session->config.timeout_ms) {
+            if (session->on_error) {
+                session->on_error(-1, "Session timeout", session->user_data);
+            }
+            return -1;
+        }
+        
+#ifdef _WIN32
+        Sleep(10);
+#else
+        usleep(10000);
+#endif
+    }
+    
+    return 0;
+}
+
+int rgtp_session_get_stats(rgtp_session_t* session, rgtp_stats_t* stats) {
+    if (!session || !stats) return -1;
+    
+    memset(stats, 0, sizeof(rgtp_stats_t));
+    
+    if (session->active_surface) {
+        stats->bytes_sent = session->active_surface->bytes_sent;
+        stats->chunks_sent = session->active_surface->chunks_sent;
+        stats->completion_percent = rgtp_progress(session->active_surface) * 100.0f;
+        stats->active_connections = session->active_surface->pull_pressure;
+    }
+    
+    return 0;
+}
+
+void rgtp_session_destroy(rgtp_session_t* session) {
+    if (!session) return;
+    
+    session->is_running = false;
+    
+    if (session->active_surface) {
+        rgtp_destroy_surface(session->active_surface);
+        session->active_surface = NULL;
+    }
+    
+    if (session->sockfd >= 0) {
+        close(session->sockfd);
+    }
+    
+    free(session);
+}
+
+// Client management functions
+
+rgtp_client_t* rgtp_client_create(const rgtp_config_t* config) {
+    rgtp_client_t* client = calloc(1, sizeof(rgtp_client_t));
+    if (!client) return NULL;
+    
+    // Initialize config
+    if (config) {
+        client->config = *config;
+    } else {
+        client->config = default_config;
+    }
+    
+    // Create socket
+    client->sockfd = rgtp_socket();
+    if (client->sockfd < 0) {
+        free(client);
+        return NULL;
+    }
+    
+    client->is_running = true;
+    return client;
+}
+
+int rgtp_client_pull_to_file(rgtp_client_t* client, const char* host, 
+                            uint16_t port, const char* filename) {
+    if (!client || !host || !filename || client->is_connected) {
+        return -1;
+    }
+    
+    // Resolve host
+    struct sockaddr_in server = {0};
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+    
+    if (inet_pton(AF_INET, host, &server.sin_addr) <= 0) {
+        return -1; // Invalid address
+    }
+    
+    // Generate exposure ID (in a real implementation, this would be obtained from server)
+    uint64_t exposure_id[2];
+    rgtp_generate_exposure_id(exposure_id);
+    
+    // Start pull
+    int result = rgtp_pull_start(client->sockfd, &server, exposure_id, &client->active_surface);
+    if (result == 0) {
+        client->is_connected = true;
+        
+        // Pull data to file
+        FILE* f = fopen(filename, "wb");
+        if (!f) {
+            rgtp_destroy_surface(client->active_surface);
+            client->active_surface = NULL;
+            return -1;
+        }
+        
+        uint8_t* buffer = malloc(10 * 1024 * 1024); // 10MB buffer
+        if (!buffer) {
+            fclose(f);
+            rgtp_destroy_surface(client->active_surface);
+            client->active_surface = NULL;
+            return -1;
+        }
+        
+        // Initial pull requests
+        for (int i = 0; i < 5; i++) {
+            rgtp_puller_poll(client->active_surface, &server);
+#ifdef _WIN32
+            Sleep(10);
+#else
+            usleep(10000);
+#endif
+        }
+        
+        // Pull loop
+        size_t total_written = 0;
+        time_t start_time = time(NULL);
+        
+        while (client->is_running && client->active_surface) {
+            size_t received = 0;
+            int pull_result = rgtp_pull_next(client->active_surface, buffer, 10 * 1024 * 1024, &received);
+            
+            if (pull_result == 0 && received > 0) {
+                fwrite(buffer, 1, received, f);
+                total_written += received;
+                
+                // Call progress callback
+                if (client->on_progress && client->active_surface->total_size > 0) {
+                    client->on_progress(total_written, client->active_surface->total_size, client->user_data);
+                }
+            }
+            
+            // Check completion
+            if (client->active_surface->total_size > 0 && 
+                rgtp_progress(client->active_surface) >= 1.0f) {
+                if (client->on_complete) {
+                    client->on_complete(filename, client->user_data);
+                }
+                break;
+            }
+            
+            // Check timeout
+            if (client->config.timeout_ms > 0 && 
+                (time(NULL) - start_time) * 1000 > client->config.timeout_ms) {
+                if (client->on_error) {
+                    client->on_error(-1, "Pull timeout", client->user_data);
+                }
+                result = -1;
+                break;
+            }
+            
+            // Periodic polling
+            static int counter = 0;
+            if (++counter % 10 == 0) {
+                rgtp_puller_poll(client->active_surface, &server);
+            }
+            
+#ifdef _WIN32
+            Sleep(5);
+#else
+            usleep(5000);
+#endif
+        }
+        
+        free(buffer);
+        fclose(f);
+    }
+    
+    return result;
+}
+
+int rgtp_client_get_stats(rgtp_client_t* client, rgtp_stats_t* stats) {
+    if (!client || !stats) return -1;
+    
+    memset(stats, 0, sizeof(rgtp_stats_t));
+    
+    if (client->active_surface) {
+        stats->bytes_received = client->active_surface->bytes_received;
+        stats->chunks_received = client->active_surface->chunks_received;
+        stats->completion_percent = rgtp_progress(client->active_surface) * 100.0f;
+    }
+    
+    return 0;
+}
+
+void rgtp_client_destroy(rgtp_client_t* client) {
+    if (!client) return;
+    
+    client->is_running = false;
+    
+    if (client->active_surface) {
+        rgtp_destroy_surface(client->active_surface);
+        client->active_surface = NULL;
+    }
+    
+    if (client->sockfd >= 0) {
+        close(client->sockfd);
+    }
+    
+    free(client);
 }

@@ -196,6 +196,20 @@ extern "C" {
     int         rgtp_set_exposure_rate(rgtp_surface_t* surface, uint32_t chunks_per_sec);
     int         rgtp_adaptive_exposure(rgtp_surface_t* surface);
     int         rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct);
+    
+    // Session management functions
+    rgtp_session_t* rgtp_session_create(const rgtp_config_t* config);
+    int         rgtp_session_expose_file(rgtp_session_t* session, const char* filename);
+    int         rgtp_session_wait_complete(rgtp_session_t* session);
+    int         rgtp_session_get_stats(rgtp_session_t* session, rgtp_stats_t* stats);
+    void        rgtp_session_destroy(rgtp_session_t* session);
+    
+    // Client management functions
+    rgtp_client_t* rgtp_client_create(const rgtp_config_t* config);
+    int         rgtp_client_pull_to_file(rgtp_client_t* client, const char* host, 
+                    uint16_t port, const char* filename);
+    int         rgtp_client_get_stats(rgtp_client_t* client, rgtp_stats_t* stats);
+    void        rgtp_client_destroy(rgtp_client_t* client);
 
     // Helper function to check if all chunks have been written
     static inline int all_chunks_written(const rgtp_surface_t* surface) {
