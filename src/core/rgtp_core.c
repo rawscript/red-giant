@@ -568,6 +568,42 @@ int rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct) {
     return 0;
 }
 
+// Comprehensive statistics collection
+int rgtp_get_stats(const rgtp_surface_t* surface, rgtp_stats_t* stats) {
+    if (!surface || !stats) return -1;
+    
+    memset(stats, 0, sizeof(rgtp_stats_t));
+    
+    stats->bytes_sent = surface->bytes_sent;
+    stats->bytes_received = surface->bytes_received;
+    stats->chunks_sent = surface->chunks_sent;
+    stats->chunks_received = surface->chunks_received;
+    stats->packets_lost = surface->packets_lost;
+    stats->rtt_ms = surface->rtt_ms;
+    stats->packet_loss_rate = surface->chunks_sent > 0 ? 
+        (float)surface->packets_lost / (float)surface->chunks_sent : 0.0f;
+    
+    // Calculate throughput (bytes per second)
+    if (surface->last_packet_time_ms > 0) {
+        uint64_t elapsed_ms = time(NULL) * 1000 + (clock() % 1000) - surface->last_packet_time_ms;
+        if (elapsed_ms > 0) {
+            stats->avg_throughput_mbps = (float)(surface->bytes_sent + surface->bytes_received) / 
+                                       (float)elapsed_ms / 1000.0f;
+        }
+    }
+    
+    // Calculate completion percentage
+    if (surface->total_size > 0) {
+        uint64_t transferred = surface->bytes_sent > 0 ? surface->bytes_sent : surface->bytes_received;
+        stats->completion_percent = (float)transferred / (float)surface->total_size * 100.0f;
+    }
+    
+    stats->active_connections = surface->pull_pressure;
+    stats->retransmissions = 0; // Would be set based on FEC retransmissions
+    
+    return 0;
+}
+
 // Session management implementation
 
 rgtp_session_t* rgtp_session_create(const rgtp_config_t* config) {
