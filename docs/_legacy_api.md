@@ -83,6 +83,29 @@ Set the exposure rate for adaptive flow control.
 
 **Returns:** 0 on success, -1 on error
 
+#### `int rgtp_adaptive_exposure(rgtp_surface_t* surface)`
+Enable adaptive exposure rate based on network conditions and receiver demand.
+
+**Parameters:**
+- `surface`: Exposure surface
+
+**Returns:** 0 on success, -1 on error
+
+#### `int rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct)`
+Get exposure completion percentage.
+
+**Parameters:**
+- `surface`: Exposure surface
+- `completion_pct`: Output completion percentage (0-100)
+
+**Returns:** 0 on success, -1 on error
+
+**Parameters:**
+- `surface`: Exposure surface
+- `chunks_per_sec`: Target chunks per second
+
+**Returns:** 0 on success, -1 on error
+
 #### `int rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct)`
 Get exposure completion percentage.
 

@@ -157,6 +157,11 @@ extern "C" {
     int         rgtp_enable_nat_traversal(rgtp_surface_t* surface);
     int         rgtp_perform_hole_punching(rgtp_surface_t* surface, 
         const struct sockaddr_in* peer_addr);
+    
+    // Adaptive rate control functions
+    int         rgtp_set_exposure_rate(rgtp_surface_t* surface, uint32_t chunks_per_sec);
+    int         rgtp_adaptive_exposure(rgtp_surface_t* surface);
+    int         rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct);
 
     // Helper function to check if all chunks have been written
     static inline int all_chunks_written(const rgtp_surface_t* surface) {

@@ -13,15 +13,16 @@ Welcome to the Red Giant Transport Protocol (RGTP) documentation.
 
 ## What is RGTP?
 
-RGTP (Red Giant Transport Protocol) is a revolutionary Layer 4 transport protocol that implements exposure-based data transmission. Unlike traditional protocols, RGTP allows one exposure to serve unlimited receivers with natural multicast support and instant resume capabilities.
+RGTP (Red Giant Transport Protocol) is a Layer 4 transport protocol that implements exposure-based data transmission. As a transport layer protocol, RGTP provides the foundational mechanisms for reliable, efficient data distribution without requiring application-level coordination. Unlike traditional protocols, RGTP allows one exposure to serve unlimited receivers with natural multicast support and instant resume capabilities.
 
 ## Key Features
 
 - **Natural Multicast**: One exposure serves unlimited receivers
 - **Instant Resume**: Stateless chunk-based transfers
-- **Adaptive Flow Control**: Exposure rate matches receiver capacity
+- **Receiver-Driven Flow Control**: Exposure rate responds to pull requests
 - **No Head-of-Line Blocking**: Pull chunks out of order
 - **Superior Packet Loss Resilience**: Only lost chunks need re-exposure
+- **Transport Layer Foundation**: Provides low-level reliable delivery for applications
 
 ## Architecture
 

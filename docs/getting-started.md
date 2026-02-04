@@ -112,6 +112,8 @@ const session = new rgtp.Session({
 });
 ```
 
+> **Note**: The JavaScript bindings currently provide simplified abstractions over the core C API. For full control over transport layer features, use the C API directly.
+
 ### Client Configuration
 
 ```javascript

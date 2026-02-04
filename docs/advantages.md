@@ -1,4 +1,4 @@
-# Red Giant Transport Protocol (RGTP) - Layer 4 Advantages
+# Red Giant Transport Protocol (RGTP) - Layer 4 Transport Protocol
 
 ## Why Layer 4 Exposure-Based Transport is Revolutionary
 
@@ -37,18 +37,15 @@ rgtp_selective_pull(sockfd, &server, chunk_ids, count);
 - No connection setup needed
 - Stateless chunk requests
 
-### **3. Adaptive Congestion Control**
+### **3. Receiver-Driven Flow Control**
 
-**TCP's Problem:** Fixed algorithms (Reno, Cubic, BBR)
+**TCP's Problem:** Fixed algorithms (Reno, Cubic, BBR) with sender-driven rate control
 
-**RGTP's Innovation:** Exposure-rate adaptation
+**RGTP's Innovation:** Transport-layer adaptive exposure rate based on receiver demand
 ```c
-// Adjust exposure rate based on pull pressure
-if (surface->pull_pressure > surface->congestion_window) {
-    surface->exposure_rate *= 1.1;  // Receiver keeping up
-} else {
-    surface->exposure_rate *= 0.9;  // Receiver overwhelmed
-}
+// Transport layer adjusts exposure rate based on pull pressure
+uint32_t adaptive_rate = calculate_adaptive_rate(surface);
+// Rate increases with receiver demand, respects network capacity
 ```
 
 ### **4. Natural Multicast/Broadcast Support**

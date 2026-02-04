@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
+#include <sodium.h> // For crypto operations
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -318,8 +318,11 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                 manifest[32] = 0xFF;
                 sendto(s->sockfd, (char*)manifest, 48, 0, (struct sockaddr*)&from, fromlen);
                 
-                // Send chunks (but not all at once to avoid network saturation)
-                uint32_t chunks_to_send = s->chunk_count < 50 ? s->chunk_count : 50; // Limit to 50 chunks per request
+                // Send chunks with adaptive rate control
+                uint32_t chunks_to_send = calculate_adaptive_rate(s);
+                if (chunks_to_send > s->chunk_count) {
+                    chunks_to_send = s->chunk_count;
+                }
                 for (uint32_t i = 0; i < chunks_to_send && i < s->chunk_count; i++) {
                     uint8_t pkt[1500];
                     pkt[0] = 0x01;
@@ -351,8 +354,11 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
                 manifest[32] = 0xFF;
                 sendto(s->sockfd, (char*)manifest, 48, 0, (struct sockaddr*)&from, fromlen);
                 
-                // Send chunks (but not all at once)
-                uint32_t chunks_to_send = s->chunk_count < 50 ? s->chunk_count : 50;
+                // Send chunks with adaptive rate control
+                uint32_t chunks_to_send = calculate_adaptive_rate(s);
+                if (chunks_to_send > s->chunk_count) {
+                    chunks_to_send = s->chunk_count;
+                }
                 for (uint32_t i = 0; i < chunks_to_send && i < s->chunk_count; i++) {
                     uint8_t pkt[1500];
                     pkt[0] = 0x01;
@@ -465,7 +471,66 @@ int rgtp_puller_poll(rgtp_surface_t* s, const struct sockaddr_in* server) {
 }
 
 // Add encryption support to the core C implementation
-#include <sodium.h> // For crypto operations
+
+// Adaptive rate control implementation
+static uint32_t calculate_adaptive_rate(rgtp_surface_t* s) {
+    if (!s || !s->config.adaptive_mode) {
+        return s->config.exposure_rate;
+    }
+    
+    // Base rate from configuration
+    uint32_t target_rate = s->config.exposure_rate;
+    
+    // Adjust based on pull pressure (receiver demand)
+    if (s->pull_pressure > 0) {
+        // Increase rate if receivers are keeping up
+        target_rate = (uint32_t)(target_rate * (1.0 + (s->pull_pressure * 0.1)));
+    }
+    
+    // Adjust based on packet loss (if we had loss tracking)
+    // This would use s->packets_lost and s->chunks_sent
+    
+    // Apply reasonable limits
+    if (target_rate > s->chunk_count) {
+        target_rate = s->chunk_count;  // Don't exceed total chunks
+    }
+    if (target_rate < 10) {
+        target_rate = 10;  // Minimum reasonable rate
+    }
+    
+    return target_rate;
+}
+
+// Public API function to set exposure rate
+int rgtp_set_exposure_rate(rgtp_surface_t* surface, uint32_t chunks_per_sec) {
+    if (!surface) return -1;
+    
+    surface->config.exposure_rate = chunks_per_sec;
+    return 0;
+}
+
+// Public API function for adaptive exposure control
+int rgtp_adaptive_exposure(rgtp_surface_t* surface) {
+    if (!surface) return -1;
+    
+    // Enable adaptive mode in config
+    surface->config.adaptive_mode = true;
+    return 0;
+}
+
+// Get exposure status
+int rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct) {
+    if (!surface || !completion_pct) return -1;
+    
+    if (surface->total_size == 0) {
+        *completion_pct = 0.0f;
+        return 0;
+    }
+    
+    uint64_t transferred = surface->bytes_sent > 0 ? surface->bytes_sent : surface->bytes_received;
+    *completion_pct = (float)transferred / (float)surface->total_size * 100.0f;
+    return 0;
+}
 
 // Encryption context structure
 typedef struct {
