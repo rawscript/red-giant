@@ -10,6 +10,7 @@
     "test:features": "mocha test/test_features.js",
     "test:all": "npm test",
     "build": "cd bindings/node && node-gyp rebuild",
+    "build:win": "cd bindings/node && set npm_config_arch=x64 && node-gyp rebuild",
     "install": "cd bindings/node && npm install",
     "prepublishOnly": "npm run build",
     "example": "node examples/simple-transfer.js",

@@ -12,6 +12,13 @@ struct sockaddr_in;
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <synchapi.h>
+#define pthread_mutex_t CRITICAL_SECTION
+#define pthread_mutex_init(mutex, attr) InitializeCriticalSection(mutex)
+#define pthread_mutex_destroy(mutex) DeleteCriticalSection(mutex)
+#define pthread_mutex_lock(mutex) EnterCriticalSection(mutex)
+#define pthread_mutex_unlock(mutex) LeaveCriticalSection(mutex)
+#define pthread_t HANDLE
 #define close closesocket
 #define sleep(x) Sleep((x)*1000)
 #define usleep(x) Sleep((x)/1000)
@@ -22,6 +29,7 @@ static inline uint64_t be64toh(uint64_t v) { return htobe64(v); }
 #else
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <pthread.h>
 #endif
 
 /* -------------------------------------------------------------------------- */
@@ -54,35 +62,6 @@ typedef struct {
     float completion_percent;
     uint32_t active_connections;
 } rgtp_stats_t;
-
-/* -------------------------------------------------------------------------- */
-/* Session Management Structures                                              */
-/* -------------------------------------------------------------------------- */
-typedef struct rgtp_session {
-    int sockfd;
-    rgtp_config_t config;
-    rgtp_surface_t* active_surface;
-    bool is_exposing;
-    bool is_running;
-    void* user_data;
-    // Callbacks
-    void (*on_progress)(size_t transferred, size_t total, void* user_data);
-    void (*on_complete)(void* user_data);
-    void (*on_error)(int error_code, const char* message, void* user_data);
-} rgtp_session_t;
-
-typedef struct rgtp_client {
-    int sockfd;
-    rgtp_config_t config;
-    rgtp_surface_t* active_surface;
-    bool is_connected;
-    bool is_running;
-    void* user_data;
-    // Callbacks
-    void (*on_progress)(size_t received, size_t total, void* user_data);
-    void (*on_complete)(const char* filename, void* user_data);
-    void (*on_error)(int error_code, const char* message, void* user_data);
-} rgtp_client_t;
 
 /* -------------------------------------------------------------------------- */
 /* Exposure surface — the core data structure                                */
@@ -134,6 +113,35 @@ typedef struct rgtp_surface_s {
     bool      nat_traversal_enabled;
     struct sockaddr_in public_addr;
 } rgtp_surface_t;
+
+/* -------------------------------------------------------------------------- */
+/* Session Management Structures                                              */
+/* -------------------------------------------------------------------------- */
+typedef struct rgtp_session {
+    int sockfd;
+    rgtp_config_t config;
+    rgtp_surface_t* active_surface;
+    bool is_exposing;
+    bool is_running;
+    void* user_data;
+    // Callbacks
+    void (*on_progress)(size_t transferred, size_t total, void* user_data);
+    void (*on_complete)(void* user_data);
+    void (*on_error)(int error_code, const char* message, void* user_data);
+} rgtp_session_t;
+
+typedef struct rgtp_client {
+    int sockfd;
+    rgtp_config_t config;
+    rgtp_surface_t* active_surface;
+    bool is_connected;
+    bool is_running;
+    void* user_data;
+    // Callbacks
+    void (*on_progress)(size_t received, size_t total, void* user_data);
+    void (*on_complete)(const char* filename, void* user_data);
+    void (*on_error)(int error_code, const char* message, void* user_data);
+} rgtp_client_t;
 
 /* -------------------------------------------------------------------------- */
 /* Memory Pool Structures                                                     */
