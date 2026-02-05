@@ -109,18 +109,31 @@ class RGTPSession extends EventEmitter {
   }
   
   async waitComplete() {
-    return new Promise((resolve) => {
-      const checkComplete = () => {
+    if (!this.sessionHandle) {
+      throw new Error('No active session');
+    }
+    
+    return new Promise((resolve, reject) => {
+      const checkCompletion = () => {
         if (this.isClosed) {
           resolve();
           return;
         }
         
-        // Simulate completion check
-        setTimeout(checkComplete, 100);
+        try {
+          const result = rgtp.sessionWaitComplete(this.sessionHandle);
+          if (result === 0) {
+            resolve();
+          } else {
+            // Continue checking
+            setTimeout(checkCompletion, 100);
+          }
+        } catch (error) {
+          reject(error);
+        }
       };
       
-      checkComplete();
+      checkCompletion();
     });
   }
   
@@ -133,14 +146,9 @@ class RGTPSession extends EventEmitter {
     
     this.isClosed = true;
     
-    if (this.surface) {
-      rgtp.destroySurface(this.surface);
-      this.surface = null;
-    }
-    
-    if (this.socket) {
-      // Close socket (would need platform-specific implementation)
-      this.socket = null;
+    if (this.sessionHandle) {
+      rgtp.sessionDestroy(this.sessionHandle);
+      this.sessionHandle = null;
     }
     
     rgtp.cleanup();
