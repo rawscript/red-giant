@@ -1,0 +1,60 @@
+{
+  "name": "rgtp",
+  "version": "2.1.0",
+  "description": "Red Giant Transport Protocol - Layer 4 exposure-based transport protocol",
+  "main": "bindings/node/index.js",
+  "scripts": {
+    "test": "node test/test_runner.js",
+    "test:core": "mocha test/test_core.js",
+    "test:performance": "mocha test/test_performance.js",
+    "test:features": "mocha test/test_features.js",
+    "test:all": "npm test",
+    "build": "cd bindings/node && node-gyp rebuild",
+    "install": "cd bindings/node && npm install",
+    "prepublishOnly": "npm run build",
+    "example": "node examples/simple-transfer.js",
+    "examples": "npm run example"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/redgiant/rgtp.git"
+  },
+  "keywords": [
+    "networking",
+    "transport",
+    "protocol",
+    "udp",
+    "multicast",
+    "file-transfer",
+    "p2p",
+    "exposure-based",
+    "reliable",
+    "fast"
+  ],
+  "author": "Red Giant Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/redgiant/rgtp/issues"
+  },
+  "homepage": "https://github.com/redgiant/rgtp#readme",
+  "dependencies": {
+    "bindings": "^1.5.0",
+    "nan": "^2.17.0"
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0",
+    "chai": "^4.3.7",
+    "node-gyp": "^9.3.1",
+    "eslint": "^8.32.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "binary": {
+    "module_name": "rgtp",
+    "module_path": "./bindings/node/build/{configuration}/{node_abi}-{platform}-{arch}/",
+    "remote_path": "./{name}/v{version}/{configuration}/",
+    "package_name": "{module_name}-v{version}-{node_abi}-{platform}-{arch}.tar.gz",
+    "host": "https://github.com"
+  }
+}
