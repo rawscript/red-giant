@@ -11,6 +11,7 @@ struct sockaddr_in;
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 #define close closesocket
 #define sleep(x) Sleep((x)*1000)
 #define usleep(x) Sleep((x)/1000)
@@ -135,6 +136,21 @@ typedef struct rgtp_surface_s {
 } rgtp_surface_t;
 
 /* -------------------------------------------------------------------------- */
+/* Memory Pool Structures                                                     */
+/* -------------------------------------------------------------------------- */
+
+#define RGTP_MEMORY_POOL_SIZE 1024
+#define RGTP_DEFAULT_CHUNK_SIZE 1450
+
+typedef struct rgtp_memory_pool {
+    void* blocks[RGTP_MEMORY_POOL_SIZE];
+    size_t block_size;
+    int free_count;
+    int total_blocks;
+    pthread_mutex_t mutex;  // For thread safety
+} rgtp_memory_pool_t;
+
+/* -------------------------------------------------------------------------- */
 /* Public API — clean, minimal, future-proof                                  */
 /* -------------------------------------------------------------------------- */
 #ifdef __cplusplus
@@ -197,6 +213,14 @@ extern "C" {
     int         rgtp_adaptive_exposure(rgtp_surface_t* surface);
     int         rgtp_get_exposure_status(rgtp_surface_t* surface, float* completion_pct);
     
+    // Memory pool functions
+    rgtp_memory_pool_t* rgtp_memory_pool_create(size_t block_size, int num_blocks);
+    void        rgtp_memory_pool_destroy(rgtp_memory_pool_t* pool);
+    void*       rgtp_memory_pool_alloc(rgtp_memory_pool_t* pool);
+    void        rgtp_memory_pool_free(rgtp_memory_pool_t* pool, void* ptr);
+    int         rgtp_memory_pool_init_global();
+    void        rgtp_memory_pool_cleanup_global();
+
     // Session management functions
     rgtp_session_t* rgtp_session_create(const rgtp_config_t* config);
     int         rgtp_session_expose_file(rgtp_session_t* session, const char* filename);

@@ -971,3 +971,161 @@ void rgtp_client_destroy(rgtp_client_t* client) {
     
     free(client);
 }
+
+// Memory Pool Implementation
+
+static rgtp_memory_pool_t* global_chunk_pool = NULL;
+
+rgtp_memory_pool_t* rgtp_memory_pool_create(size_t block_size, int num_blocks) {
+    if (num_blocks <= 0 || num_blocks > RGTP_MEMORY_POOL_SIZE || block_size == 0) {
+        return NULL;
+    }
+    
+    rgtp_memory_pool_t* pool = calloc(1, sizeof(rgtp_memory_pool_t));
+    if (!pool) {
+        return NULL;
+    }
+    
+    pool->block_size = block_size;
+    pool->total_blocks = num_blocks;
+    pool->free_count = 0;
+    
+    // Initialize mutex for thread safety
+#ifdef _WIN32
+    InitializeCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_init(&pool->mutex, NULL);
+#endif
+    
+    // Pre-allocate all blocks
+    for (int i = 0; i < num_blocks; i++) {
+        void* block = malloc(block_size);
+        if (!block) {
+            // Clean up already allocated blocks
+            for (int j = 0; j < i; j++) {
+                if (pool->blocks[j]) {
+                    free(pool->blocks[j]);
+                }
+            }
+#ifdef _WIN32
+            DeleteCriticalSection(&pool->mutex);
+#else
+            pthread_mutex_destroy(&pool->mutex);
+#endif
+            free(pool);
+            return NULL;
+        }
+        pool->blocks[i] = block;
+        pool->free_count++;
+    }
+    
+    return pool;
+}
+
+void rgtp_memory_pool_destroy(rgtp_memory_pool_t* pool) {
+    if (!pool) return;
+    
+    // Lock mutex
+#ifdef _WIN32
+    EnterCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_lock(&pool->mutex);
+#endif
+    
+    // Free all blocks
+    for (int i = 0; i < pool->total_blocks; i++) {
+        if (pool->blocks[i]) {
+            free(pool->blocks[i]);
+        }
+    }
+    
+    // Unlock mutex
+#ifdef _WIN32
+    LeaveCriticalSection(&pool->mutex);
+    DeleteCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_unlock(&pool->mutex);
+    pthread_mutex_destroy(&pool->mutex);
+#endif
+    
+    free(pool);
+}
+
+void* rgtp_memory_pool_alloc(rgtp_memory_pool_t* pool) {
+    if (!pool) return NULL;
+    
+    // Lock mutex
+#ifdef _WIN32
+    EnterCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_lock(&pool->mutex);
+#endif
+    
+    void* block = NULL;
+    if (pool->free_count > 0) {
+        // Find a free block
+        for (int i = 0; i < pool->total_blocks; i++) {
+            if (pool->blocks[i] != NULL) {
+                block = pool->blocks[i];
+                pool->blocks[i] = NULL; // Mark as allocated
+                pool->free_count--;
+                break;
+            }
+        }
+    }
+    
+    // Unlock mutex
+#ifdef _WIN32
+    LeaveCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_unlock(&pool->mutex);
+#endif
+    
+    return block;
+}
+
+void rgtp_memory_pool_free(rgtp_memory_pool_t* pool, void* ptr) {
+    if (!pool || !ptr) return;
+    
+    // Lock mutex
+#ifdef _WIN32
+    EnterCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_lock(&pool->mutex);
+#endif
+    
+    // Try to return the block to the pool
+    if (pool->free_count < pool->total_blocks) {
+        for (int i = 0; i < pool->total_blocks; i++) {
+            if (pool->blocks[i] == NULL) {
+                pool->blocks[i] = ptr;
+                pool->free_count++;
+                goto unlock_and_return;
+            }
+        }
+    }
+    
+    // If pool is full or ptr not found in pool, just free it
+    free(ptr);
+    
+unlock_and_return:
+    // Unlock mutex
+#ifdef _WIN32
+    LeaveCriticalSection(&pool->mutex);
+#else
+    pthread_mutex_unlock(&pool->mutex);
+#endif
+}
+
+int rgtp_memory_pool_init_global() {
+    // Create a global memory pool for default chunk sizes
+    global_chunk_pool = rgtp_memory_pool_create(RGTP_DEFAULT_CHUNK_SIZE, 256);
+    return global_chunk_pool ? 0 : -1;
+}
+
+void rgtp_memory_pool_cleanup_global() {
+    if (global_chunk_pool) {
+        rgtp_memory_pool_destroy(global_chunk_pool);
+        global_chunk_pool = NULL;
+    }
+}
