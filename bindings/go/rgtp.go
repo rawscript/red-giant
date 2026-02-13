@@ -1,15 +1,14 @@
 package rgtp
 
 /*
-#cgo CFLAGS: -I../../../include
-#cgo LDFLAGS: -L../../../src/core -lrgtp
+#cgo CFLAGS: -I${SRCDIR}/../../include
+#cgo LDFLAGS: -L${SRCDIR}/../../src/core -lrgtp
 
 #include "rgtp/rgtp.h"
 #include <stdlib.h>
 */
 import "C"
 import (
-	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -95,7 +94,7 @@ func CreateConfig() *Config {
 // CreateSession creates a new RGTP session
 func CreateSession(config *Config) (*Session, error) {
 	if config == nil {
-		return nil, errors.New("config cannot be nil")
+		return nil, fmt.Errorf("config cannot be nil")
 	}
 
 	cConfig := C.rgtp_config_t{
@@ -111,7 +110,7 @@ func CreateSession(config *Config) (*Session, error) {
 
 	cSession := C.rgtp_session_create(&cConfig)
 	if cSession == nil {
-		return nil, errors.New("failed to create session")
+		return nil, fmt.Errorf("failed to create session")
 	}
 
 	session := &Session{
@@ -125,7 +124,7 @@ func CreateSession(config *Config) (*Session, error) {
 // ExposeFile exposes a file through the session
 func (s *Session) ExposeFile(filename string) error {
 	if s.cSession == nil {
-		return errors.New("invalid session")
+		return fmt.Errorf("invalid session")
 	}
 
 	cFilename := C.CString(filename)
@@ -142,7 +141,7 @@ func (s *Session) ExposeFile(filename string) error {
 // WaitComplete waits for the session to complete
 func (s *Session) WaitComplete() error {
 	if s.cSession == nil {
-		return errors.New("invalid session")
+		return fmt.Errorf("invalid session")
 	}
 
 	result := C.rgtp_session_wait_complete(s.cSession)
@@ -156,7 +155,7 @@ func (s *Session) WaitComplete() error {
 // GetStats gets session statistics
 func (s *Session) GetStats() (*Stats, error) {
 	if s.cSession == nil {
-		return nil, errors.New("invalid session")
+		return nil, fmt.Errorf("invalid session")
 	}
 
 	var cStats C.rgtp_stats_t
@@ -193,7 +192,7 @@ func (s *Session) Destroy() {
 // CreateClient creates a new RGTP client
 func CreateClient(config *Config) (*Client, error) {
 	if config == nil {
-		return nil, errors.New("config cannot be nil")
+		return nil, fmt.Errorf("config cannot be nil")
 	}
 
 	cConfig := C.rgtp_config_t{
@@ -209,7 +208,7 @@ func CreateClient(config *Config) (*Client, error) {
 
 	cClient := C.rgtp_client_create(&cConfig)
 	if cClient == nil {
-		return nil, errors.New("failed to create client")
+		return nil, fmt.Errorf("failed to create client")
 	}
 
 	client := &Client{
@@ -223,7 +222,7 @@ func CreateClient(config *Config) (*Client, error) {
 // PullToFile pulls data to a file
 func (c *Client) PullToFile(host string, port uint16, filename string) error {
 	if c.cClient == nil {
-		return errors.New("invalid client")
+		return fmt.Errorf("invalid client")
 	}
 
 	cHost := C.CString(host)
@@ -242,7 +241,7 @@ func (c *Client) PullToFile(host string, port uint16, filename string) error {
 // GetClientStats gets client statistics
 func (c *Client) GetStats() (*Stats, error) {
 	if c.cClient == nil {
-		return nil, errors.New("invalid client")
+		return nil, fmt.Errorf("invalid client")
 	}
 
 	var cStats C.rgtp_stats_t
