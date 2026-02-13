@@ -1,0 +1,25 @@
+{
+  "name": "rgtp-node-go",
+  "version": "1.0.0",
+  "description": "Node.js bindings for RGTP using Go bridge",
+  "main": "index.js",
+  "scripts": {
+    "install": "node-gyp rebuild",
+    "build": "node-gyp build",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "rgtp",
+    "go",
+    "udp",
+    "transport",
+    "file-transfer"
+  ],
+  "author": "Red Giant Team",
+  "license": "MIT",
+  "dependencies": {
+    "node-addon-api": "^5.0.0",
+    "node-gyp": "^9.0.0"
+  },
+  "gypfile": true
+}
