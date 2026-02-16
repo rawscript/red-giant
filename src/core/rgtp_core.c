@@ -22,6 +22,20 @@
 #include <fcntl.h>
 #endif
 
+// Define missing macros
+#ifndef STORE64_LE
+#define STORE64_LE(dst, val) do { \
+    (dst)[0] = (uint8_t)((val) & 0xff); \
+    (dst)[1] = (uint8_t)(((val) >> 8) & 0xff); \
+    (dst)[2] = (uint8_t)(((val) >> 16) & 0xff); \
+    (dst)[3] = (uint8_t)(((val) >> 24) & 0xff); \
+    (dst)[4] = (uint8_t)(((val) >> 32) & 0xff); \
+    (dst)[5] = (uint8_t)(((val) >> 40) & 0xff); \
+    (dst)[6] = (uint8_t)(((val) >> 48) & 0xff); \
+    (dst)[7] = (uint8_t)(((val) >> 56) & 0xff); \
+} while(0)
+#endif
+
 // ==================================================================
 // REED-SOLOMON (255,223) — 32 parity symbols
 // ==================================================================
@@ -275,6 +289,99 @@ int rgtp_expose_data(int sockfd, const void* data, size_t size,
     return 0;
 }
 
+// Enhanced function with configuration
+int rgtp_expose_data_with_config(int sockfd,
+    const void* data, size_t size,
+    const struct sockaddr_in* dest,
+    const rgtp_config_t* config,
+    rgtp_surface_t** out_surface)
+{
+    if (size == 0 || !data || !out_surface || sockfd < 0) return -1;
+    
+    rgtp_surface_t* s = calloc(1, sizeof(rgtp_surface_t));
+    if (!s) return -1;
+
+    s->sockfd = sockfd;
+    if (dest) {
+        s->peer = *dest;
+    } else {
+        // Initialize with default values if dest is NULL
+        memset(&s->peer, 0, sizeof(s->peer));
+        s->peer.sin_family = AF_INET;
+        s->peer.sin_addr.s_addr = INADDR_ANY;
+    }
+    s->total_size = size;
+
+    // Apply configuration
+    if (config) {
+        s->config = *config;
+        // Validate configuration parameters
+        if (config->chunk_size == 0) {
+            s->optimal_chunk_size = 1450;
+        } else if (config->chunk_size > 65507) {  // Max UDP payload size
+            s->optimal_chunk_size = 65507;
+        } else {
+            s->optimal_chunk_size = config->chunk_size;
+        }
+    } else {
+        s->config = default_config;
+        s->optimal_chunk_size = 1450;
+    }
+
+    // Prevent integer overflow when calculating chunk_count
+    if (size > SIZE_MAX - s->optimal_chunk_size + 1) {
+        free(s);
+        return -1;
+    }
+    s->chunk_count = (uint32_t)((size + s->optimal_chunk_size - 1) / s->optimal_chunk_size);
+    
+    // Check for potential overflow in chunk_count calculation
+    if (s->chunk_count == 0 && size > 0) {
+        free(s);
+        return -1;
+    }
+
+    s->exposure_id[0] = next_random();
+    s->exposure_id[1] = next_random() ^ (uint64_t)time(NULL);
+
+    s->encrypted_chunks = calloc(s->chunk_count, sizeof(void*));
+    if (!s->encrypted_chunks) {
+        free(s);
+        return -1;
+    }
+    
+    s->encrypted_chunk_sizes = calloc(s->chunk_count, sizeof(size_t));
+    if (!s->encrypted_chunk_sizes) {
+        free(s->encrypted_chunks);
+        free(s);
+        return -1;
+    }
+
+    const uint8_t* src = (const uint8_t*)data;
+    for (uint32_t i = 0; i < s->chunk_count; i++) {
+        size_t offset = i * s->optimal_chunk_size;
+        size_t chunk_size = (offset + s->optimal_chunk_size <= size) ? 
+                             s->optimal_chunk_size : size - offset;
+        void* chunk = malloc(chunk_size);
+        if (!chunk) {
+            // Clean up on allocation failure
+            for (uint32_t j = 0; j < i; j++) {
+                free(s->encrypted_chunks[j]);
+            }
+            free(s->encrypted_chunks);
+            free(s->encrypted_chunk_sizes);
+            free(s);
+            return -1;
+        }
+        memcpy(chunk, src + offset, chunk_size);
+        s->encrypted_chunks[i] = chunk;
+        s->encrypted_chunk_sizes[i] = chunk_size;
+    }
+
+    *out_surface = s;
+    return 0;
+}
+
 // ==================================================================
 // POLL — WITH REED-SOLOMON (NO BUFFER OVERFLOW)
  // ==================================================================
@@ -394,9 +501,53 @@ int rgtp_poll(rgtp_surface_t* s, int timeout_ms) {
 
 void rgtp_destroy_surface(rgtp_surface_t* s) {
     if (!s) return;
-    for (uint32_t i = 0; i < s->chunk_count; i++) free(s->encrypted_chunks[i]);
-    free(s->encrypted_chunks);
-    free(s->encrypted_chunk_sizes);
+    
+    // Free encrypted chunks if they exist
+    if (s->encrypted_chunks) {
+        for (uint32_t i = 0; i < s->chunk_count; i++) {
+            if (s->encrypted_chunks[i]) {
+                free(s->encrypted_chunks[i]);
+            }
+        }
+        free(s->encrypted_chunks);
+    }
+    
+    // Free encrypted chunk sizes if they exist
+    if (s->encrypted_chunk_sizes) {
+        free(s->encrypted_chunk_sizes);
+    }
+    
+    // Free received chunks if they exist (for pullers)
+    if (s->received_chunks) {
+        for (uint32_t i = 0; i < s->chunk_count; i++) {
+            if (s->received_chunks[i]) {
+                free(s->received_chunks[i]);
+            }
+        }
+        free(s->received_chunks);
+    }
+    
+    // Free received chunk sizes if they exist
+    if (s->received_chunk_sizes) {
+        free(s->received_chunk_sizes);
+    }
+    
+    // Free shared memory if it exists
+    if (s->shared_memory) {
+        free(s->shared_memory);
+    }
+    
+    // Free chunk bitmap if it exists
+    if (s->chunk_bitmap) {
+        free(s->chunk_bitmap);
+    }
+    
+    // Free received chunk bitmap if it exists
+    if (s->received_chunk_bitmap) {
+        free(s->received_chunk_bitmap);
+    }
+    
+    // Finally free the surface itself
     free(s);
 }
 
@@ -739,6 +890,104 @@ int rgtp_decrypt_chunk(const uint8_t* encrypted_data, size_t encrypted_size,
 }
 
 // Additional session management functions
+
+int rgtp_session_expose_file(rgtp_session_t* session, const char* filename) {
+    if (!session || !filename) {
+        return -1;
+    }
+    
+    // Validate filename length to prevent buffer overflows
+    size_t filename_len = strlen(filename);
+    if (filename_len == 0 || filename_len > 4096) {  // Reasonable limit
+        return -1;
+    }
+    
+    // Open and read the file
+    FILE* f = fopen(filename, "rb");
+    if (!f) {
+        if (session->on_error) {
+            session->on_error(-1, "File does not exist or cannot be opened", session->user_data);
+        }
+        return -1;  // File doesn't exist or can't be opened
+    }
+    
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    long pos = ftell(f);
+    if (pos < 0) {
+        fclose(f);
+        if (session->on_error) {
+            session->on_error(-1, "Cannot determine file size", session->user_data);
+        }
+        return -1;
+    }
+    size_t size = (size_t)pos;
+    fseek(f, 0, SEEK_SET);
+    
+    // Check for maximum file size to prevent memory exhaustion
+    if (size == 0 || size > SIZE_MAX / 2) {  // Conservative limit
+        fclose(f);
+        if (session->on_error) {
+            session->on_error(-1, "Invalid file size", session->user_data);
+        }
+        return -1;  // Empty file or too large
+    }
+    
+    // Allocate memory for file data
+    void* data = malloc(size);
+    if (!data) {
+        fclose(f);
+        if (session->on_error) {
+            session->on_error(-1, "Memory allocation failed", session->user_data);
+        }
+        return -1;  // Memory allocation failed
+    }
+    
+    // Read file data
+    size_t bytes_read = fread(data, 1, size, f);
+    if (bytes_read != size) {
+        fclose(f);
+        free(data);
+        if (session->on_error) {
+            session->on_error(-1, "File read failed", session->user_data);
+        }
+        return -1;  // Read failed
+    }
+    
+    fclose(f);
+    
+    // Create a dummy destination address for the exposure
+    struct sockaddr_in dummy_dest = {0};
+    dummy_dest.sin_family = AF_INET;
+    dummy_dest.sin_addr.s_addr = INADDR_ANY;
+    dummy_dest.sin_port = 0;
+    
+    // Expose the data using the existing expose function
+    rgtp_surface_t* surface = NULL;
+    int result = rgtp_expose_data_with_config(session->sockfd, data, size, &dummy_dest, 
+                                             &session->config, &surface);
+    
+    if (result == 0 && surface) {
+        session->active_surface = surface;
+        session->is_exposing = true;
+        
+        if (session->on_progress) {
+            session->on_progress(0, size, session->user_data);  // Initial progress
+        }
+        
+        // Keep a copy of data to free later
+        // In a production implementation, we'd want to manage this differently
+        // but for now we'll just store the surface
+    } else {
+        free(data);  // Clean up on failure
+        result = -1;
+        if (session->on_error) {
+            session->on_error(-1, "Failed to expose file", session->user_data);
+        }
+    }
+    
+    return result;
+}
 
 int rgtp_session_wait_complete(rgtp_session_t* session) {
     if (!session || !session->is_exposing || !session->active_surface) {

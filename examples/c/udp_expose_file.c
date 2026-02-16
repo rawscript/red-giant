@@ -28,13 +28,14 @@ static void get_local_ip(char* out_ip) {
         if (he && he->h_addr_list[0]) {
             struct in_addr addr = *(struct in_addr*)he->h_addr_list[0];
             if (addr.s_addr != htonl(INADDR_LOOPBACK)) {
-                strcpy(out_ip, inet_ntoa(addr));
+                // Ensure out_ip has enough space for IP address (max 15 chars + null)
+                snprintf(out_ip, 16, "%s", inet_ntoa(addr));
                 return;
             }
         }
     }
 #endif
-    strcpy(out_ip, "127.0.0.1");
+    snprintf(out_ip, 16, "%s", "127.0.0.1");
 }
 
 int main(int argc, char** argv) {

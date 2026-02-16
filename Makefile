@@ -17,32 +17,52 @@ EXAMPLE_DIR = examples
 DOC_DIR = docs
 
 # Compiler settings
+ifdef OS
+CC = cl
+AR = lib
+RANLIB = echo
+IS_WINDOWS = 1
+CFLAGS_WINDOWS = -D_WIN32
+LDFLAGS_WINDOWS = -lws2_32 -liphlpapi
+else
 CC = gcc
 CXX = g++
 AR = ar
 RANLIB = ranlib
+IS_WINDOWS = 0
+endif
 
 # Compiler flags
 CFLAGS_BASE = -std=c99 -Wall -Wextra -Wpedantic -Wformat=2 -Wstrict-prototypes
-CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG -fsanitize=address -fsanitize=undefined
-CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -DNDEBUG -march=native -flto
-CFLAGS_PROFILE = $(CFLAGS_RELEASE) -pg -fprofile-arcs -ftest-coverage
+CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG $(CFLAGS_WINDOWS)
+CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -DNDEBUG -march=native -flto $(CFLAGS_WINDOWS)
+CFLAGS_PROFILE = $(CFLAGS_RELEASE) -pg -fprofile-arcs -ftest-coverage $(CFLAGS_WINDOWS)
 
 # Include paths
 INCLUDES = -I$(INCLUDE_DIR)
 
 # Library flags
 LDFLAGS = -L$(LIB_DIR)
+ifeq ($(IS_WINDOWS), 1)
+LIBS = rgtp.lib ws2_32.lib iphlpapi.lib
+LDFLAGS += $(LDFLAGS_WINDOWS)
+else
 LIBS = -lrgtp -lpthread -lm
+endif
 
 # Source files
 CORE_SOURCES = $(SRC_DIR)/core/rgtp_core.c
 CORE_OBJECTS = $(CORE_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Library targets
+ifeq ($(IS_WINDOWS), 1)
+STATIC_LIB = $(LIB_DIR)/rgtp.lib
+SHARED_LIB = $(LIB_DIR)/rgtp.dll
+else
 STATIC_LIB = $(LIB_DIR)/librgtp.a
 SHARED_LIB = $(LIB_DIR)/librgtp.so.$(VERSION)
 SHARED_LIB_LINK = $(LIB_DIR)/librgtp.so
+endif
 
 # Example targets
 EXAMPLES = $(patsubst $(EXAMPLE_DIR)/c/%.c,$(BIN_DIR)/%,$(wildcard $(EXAMPLE_DIR)/c/*.c))

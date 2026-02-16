@@ -104,7 +104,7 @@ char* parse_http_path(const char* request, char* path, size_t path_size) {
     
     // Convert to file path
     if (strcmp(path, "/") == 0) {
-        strcpy(path, "/index.html");
+        snprintf(path, path_size, "/index.html");
     }
     
     return path;

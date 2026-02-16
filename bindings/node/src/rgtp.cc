@@ -330,7 +330,7 @@ Napi::Value GenerateExposureID(const Napi::CallbackInfo& info) {
     
     // Return as hex string
     char hex_str[33]; // 32 hex chars + null terminator
-    sprintf(hex_str, "%016llx%016llx", (unsigned long long)id[0], (unsigned long long)id[1]);
+    snprintf(hex_str, sizeof(hex_str), "%016llx%016llx", (unsigned long long)id[0], (unsigned long long)id[1]);
     
     return Napi::String::New(env, hex_str);
 }
