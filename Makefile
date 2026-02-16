@@ -94,8 +94,13 @@ directories:
 # Static library
 $(STATIC_LIB): $(CORE_OBJECTS)
 	@echo "Creating static library: $@"
-	@$(AR) rcs $@ $^
-	@$(RANLIB) $@
+	@echo $(IS_WINDOWS)
+	ifeq ($(IS_WINDOWS), 1)
+		@$(AR) /OUT:$@ $^
+	else
+		@$(AR) rcs $@ $^
+		@$(RANLIB) $@
+	endif
 
 # Shared library
 $(SHARED_LIB): $(CORE_OBJECTS)
