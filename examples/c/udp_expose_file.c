@@ -1,134 +1,182 @@
-// examples/c/udp_expose_file.c — FINAL, 100% WORKING
-// This version works perfectly with the Reed-Solomon core
+/**
+ * @file udp_expose_file.c
+ * @brief Expose a file over RGTP UDP.
+ *
+ * Usage: udp_expose_file <file> [port]
+ *
+ * Pre-encrypts all chunks once, builds the Merkle tree, and serves pull
+ * requests from the immutable chunk store. Memory footprint is O(file_size)
+ * regardless of how many pullers connect simultaneously.
+ *
+ * Build:
+ *   cmake -B build -DRGTP_BUILD_EXAMPLES=ON -DRGTP_ENABLE_FEC=ON
+ *   cmake --build build
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
+
 #include "rgtp/rgtp.h"
 
 #ifdef _WIN32
-#include <conio.h>
-#include <windows.h>
-#include <iphlpapi.h>
-#pragma comment(lib, "iphlpapi.lib")
+#  include <windows.h>
+#  define SLEEP_MS(ms) Sleep(ms)
 #else
-#include <unistd.h>
+#  include <unistd.h>
+#  define SLEEP_MS(ms) usleep((ms) * 1000u)
 #endif
 
-static volatile int running = 1;
-void sigint(int s) { (void)s; running = 0; }
+static volatile int g_running = 1;
 
-static void get_local_ip(char* out_ip) {
-    out_ip[0] = 0;
-#ifdef _WIN32
-    char hostname[256];
-    if (gethostname(hostname, sizeof(hostname)) == 0) {
-        struct hostent* he = gethostbyname(hostname);
-        if (he && he->h_addr_list[0]) {
-            struct in_addr addr = *(struct in_addr*)he->h_addr_list[0];
-            if (addr.s_addr != htonl(INADDR_LOOPBACK)) {
-                // Ensure out_ip has enough space for IP address (max 15 chars + null)
-                snprintf(out_ip, 16, "%s", inet_ntoa(addr));
-                return;
-            }
-        }
-    }
-#endif
-    snprintf(out_ip, 16, "%s", "127.0.0.1");
+static void on_sigint(int sig)
+{
+    (void)sig;
+    g_running = 0;
 }
 
-int main(int argc, char** argv) {
-    if (argc != 2) {
-        printf("Usage: %s <file-to-expose>\n", argv[0]);
-        return 1;
-    }
+static void print_usage(const char *prog)
+{
+    fprintf(stderr, "Usage: %s <file> [port]\n", prog);
+    fprintf(stderr, "  file  — path to the file to expose\n");
+    fprintf(stderr, "  port  — UDP port to listen on (default: 9000)\n");
+}
 
-#ifdef _WIN32
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        fprintf(stderr, "WSAStartup failed\n");
-        return 1;
-    }
-#endif
+static void *read_file(const char *path, size_t *out_size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) { perror("fopen"); return NULL; }
 
-    rgtp_init();
-    signal(SIGINT, sigint);
+    if (fseek(f, 0, SEEK_END) != 0) { perror("fseek"); fclose(f); return NULL; }
+    long sz = ftell(f);
+    if (sz < 0) { perror("ftell"); fclose(f); return NULL; }
+    rewind(f);
 
-    FILE* f = fopen(argv[1], "rb");
-    if (!f) { perror("fopen"); return 1; }
-    fseek(f, 0, SEEK_END);
-    size_t size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    void* data = malloc(size);
-    if (!data || fread(data, 1, size, f) != size) {
-        perror("read file");
-        fclose(f); free(data); return 1;
+    void *buf = malloc((size_t)sz);
+    if (!buf) { fprintf(stderr, "out of memory\n"); fclose(f); return NULL; }
+
+    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+        perror("fread"); free(buf); fclose(f); return NULL;
     }
     fclose(f);
+    *out_size = (size_t)sz;
+    return buf;
+}
 
-    int sock = rgtp_socket();
-    if (sock < 0) {
-        fprintf(stderr, "Failed to create socket\n");
-        free(data); return 1;
+static const char *fmt_bytes(uint64_t n, char *buf, size_t bufsz)
+{
+    static const char *units[] = { "B", "KB", "MB", "GB", "TB" };
+    double v = (double)n;
+    int u = 0;
+    while (v >= 1024.0 && u < 4) { v /= 1024.0; u++; }
+    snprintf(buf, bufsz, "%.2f %s", v, units[u]);
+    return buf;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2 || argc > 3) {
+        print_usage(argv[0]);
+        return 1;
     }
 
-    // Get real bound address
-    struct sockaddr_in local = { 0 };
-    socklen_t len = sizeof(local);
-    getsockname(sock, (struct sockaddr*)&local, &len);
+    const char *file_path = argv[1];
+    uint16_t    port      = (argc == 3) ? (uint16_t)atoi(argv[2]) : 9000;
 
-    // Create a dummy destination — rgtp_poll uses the source address from recvfrom
-    struct sockaddr_in any = { 0 };
-    any.sin_family = AF_INET;
-    any.sin_addr.s_addr = INADDR_ANY;
-    any.sin_port = 0;
-
-    rgtp_surface_t* surface = NULL;
-    if (rgtp_expose_data(sock, data, size, &any, &surface) != 0 || !surface) {
-        fprintf(stderr, "Failed to expose file\n");
-        close(sock); free(data); return 1;
+    /* ── Initialise library ─────────────────────────────────────────── */
+    rgtp_error_t err = rgtp_init();
+    if (err != RGTP_OK) {
+        fprintf(stderr, "rgtp_init: %s\n", rgtp_strerror(err));
+        return 1;
     }
 
-    char local_ip[16];
-    get_local_ip(local_ip);
+    signal(SIGINT, on_sigint);
 
-    printf("\nRED GIANT UDP EXPOSER v2.1 - REED-SOLOMON EDITION\n");
-    printf("File         : %s\n", argv[1]);
-    printf("Size         : %.3f GB\n", size / 1e9);
-    printf("Exposure ID  : %016llx%016llx\n",
-        (unsigned long long)surface->exposure_id[0],
-        (unsigned long long)surface->exposure_id[1]);
-    printf("Serving on   : UDP %u → %s:%u\n", ntohs(local.sin_port), local_ip, ntohs(local.sin_port));
-    printf("Pull command : udp_pull_file %s %016llx%016llx %s\n",
-        local_ip,
-        (unsigned long long)surface->exposure_id[0],
-        (unsigned long long)surface->exposure_id[1],
-        argv[1]);
-    printf("FEC          : Reed-Solomon (255,223) — survives 80%%+ packet loss\n\n");
+    /* ── Read file ──────────────────────────────────────────────────── */
+    size_t data_size = 0;
+    void  *data      = read_file(file_path, &data_size);
+    if (!data) { rgtp_cleanup(); return 1; }
 
-    while (running) {
-        rgtp_poll(surface, 100);
-        printf("\rSent: %.3f GB | Active pullers: %u    ",
-            surface->bytes_sent / 1e9, surface->pull_pressure);
-        fflush(stdout);
+    /* ── Create socket ──────────────────────────────────────────────── */
+    rgtp_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.port          = port;
+    cfg.fec_enabled   = true;
+    cfg.fec_k         = 223;
+    cfg.fec_n         = 255;
+    cfg.merkle_proofs = true;
+    cfg.timeout_ms    = 200;
 
-#ifdef _WIN32
-        if (_kbhit() && _getch() == 27) break;
-        Sleep(50);  // Reduced sleep time for more responsive polling
-#else
-        usleep(50000);  // Reduced sleep time
-#endif
+    rgtp_socket_t *sock = NULL;
+    err = rgtp_socket_create(&cfg, &sock);
+    if (err != RGTP_OK) {
+        fprintf(stderr, "rgtp_socket_create: %s\n", rgtp_strerror(err));
+        free(data); rgtp_cleanup(); return 1;
     }
 
+    /* ── Expose data ────────────────────────────────────────────────── */
+    rgtp_surface_t *surface = NULL;
+    err = rgtp_expose(sock, data, data_size, &cfg, &surface);
+    if (err != RGTP_OK) {
+        fprintf(stderr, "rgtp_expose: %s\n", rgtp_strerror(err));
+        rgtp_socket_destroy(sock); free(data); rgtp_cleanup(); return 1;
+    }
+
+    /* ── Print info ─────────────────────────────────────────────────── */
+    uint8_t eid[16];
+    rgtp_get_exposure_id(surface, eid);
+
+    char size_buf[32];
+    fmt_bytes((uint64_t)data_size, size_buf, sizeof(size_buf));
+
+    printf("RGTP Exposer  %s\n", rgtp_version());
+    printf("  File        : %s  (%s)\n", file_path, size_buf);
+    printf("  Exposure ID : ");
+    for (int i = 0; i < 16; i++) printf("%02x", eid[i]);
+    printf("\n");
+    printf("  Port        : %u\n", port);
+    printf("  FEC         : Reed-Solomon (n=255, k=223, ~14%% overhead)\n");
+    printf("  Merkle      : proofs enabled\n");
+    printf("\n");
+    printf("  Pull command: udp_pull_file <server-ip>:%u ", port);
+    for (int i = 0; i < 16; i++) printf("%02x", eid[i]);
+    printf(" output.bin\n\n");
+    printf("Serving pull requests. Press Ctrl+C to stop.\n\n");
+
+    /* ── Serve loop ─────────────────────────────────────────────────── */
+    time_t start = time(NULL);
+
+    while (g_running) {
+        err = rgtp_poll(surface, 200);
+        if (err != RGTP_OK && err != RGTP_ERR_TIMEOUT) {
+            fprintf(stderr, "\nrgtp_poll: %s\n", rgtp_strerror(err));
+            break;
+        }
+
+        rgtp_stats_t stats;
+        if (rgtp_get_stats(surface, &stats) == RGTP_OK) {
+            char sent_buf[32];
+            fmt_bytes(stats.bytes_sent, sent_buf, sizeof(sent_buf));
+            double elapsed = difftime(time(NULL), start);
+            double mbps = elapsed > 0
+                          ? (double)stats.bytes_sent / elapsed / 1048576.0
+                          : 0.0;
+            printf("\r  Sent: %-10s  Pullers: %-4u  Throughput: %6.1f MB/s  "
+                   "Uptime: %.0fs   ",
+                   sent_buf, stats.pull_pressure, mbps, elapsed);
+            fflush(stdout);
+        }
+
+        SLEEP_MS(50);
+    }
+
+    /* ── Teardown ───────────────────────────────────────────────────── */
     printf("\n\nShutting down...\n");
-    rgtp_destroy_surface(surface);
+    rgtp_destroy_surface(surface);   /* zeroizes key before free */
+    rgtp_socket_destroy(sock);
     free(data);
-    close(sock);
-
-#ifdef _WIN32
-    WSACleanup();
-#endif
     rgtp_cleanup();
     return 0;
 }

@@ -1,196 +1,137 @@
 #!/usr/bin/env node
+/**
+ * client-demo.js — RGTP puller (client) demo.
+ *
+ * Pulls a file from an RGTP exposer and writes it to disk.
+ * Verifies each chunk with AEAD authentication and optional Merkle proofs.
+ *
+ * Usage: node examples/client-demo.js <host:port> <exposure-id-hex> <output-file>
+ *
+ * Run: node examples/client-demo.js 127.0.0.1:9000 <exposure-id> output.bin
+ */
 
-// Client demo showing batch file downloading
+'use strict';
+
 const rgtp = require('../index.js');
-const fs = require('fs').promises;
+const fs   = require('fs');
 const path = require('path');
 
-class RGTPClientDemo {
-  constructor() {
-    this.clients = [];
-    this.downloadsCompleted = 0;
-    this.totalDownloads = 0;
-  }
-  
-  async start(servers = [{ host: 'localhost', port: 9999 }]) {
-    console.log('📥 Starting RGTP Client Demo');
-    console.log('============================\n');
-    
-    this.servers = servers;
-    this.totalDownloads = servers.length;
-    
-    console.log(`🎯 Target servers: ${servers.length}`);
-    servers.forEach((server, i) => {
-      console.log(`  ${i + 1}. ${server.host}:${server.port}`);
-    });
-    
-    console.log('\n🚀 Starting downloads...\n');
-    
-    // Start downloading from all servers concurrently
-    const downloadPromises = servers.map((server, index) => 
-      this.downloadFromServer(server, index)
-    );
-    
-    await Promise.all(downloadPromises);
-    
-    this.displayFinalStats();
-  }
-  
-  async downloadFromServer(server, index) {
-    const client = new rgtp.Client({
-      timeout: 30000,
-      adaptiveMode: true
-    });
-    
-    this.clients.push(client);
-    
-    const outputPath = path.join(__dirname, `downloaded-from-${server.host}-${server.port}.txt`);
-    
-    try {
-      console.log(`📥 Client ${index + 1}: Connecting to ${server.host}:${server.port}`);
-      
-      client.on('pullStart', (host, port, outputPath) => {
-        console.log(`  📥 Client ${index + 1}: Starting download to ${path.basename(outputPath)}`);
-      });
-      
-      client.on('progress', (transferred, total) => {
-        const percent = total > 0 ? ((transferred / total) * 100).toFixed(1) : 0;
-        process.stdout.write(`\r  🔄 Client ${index + 1}: ${percent}% (${rgtp.formatBytes(transferred)}/${rgtp.formatBytes(total)})`);
-      });
-      
-      client.on('pullComplete', (outputPath) => {
-        console.log(`\n  ✅ Client ${index + 1}: Download complete - ${path.basename(outputPath)}`);
-        this.downloadsCompleted++;
-      });
-      
-      client.on('error', (error) => {
-        console.log(`\n  ❌ Client ${index + 1}: Error - ${error.message}`);
-      });
-      
-      await client.pullToFile(server.host, server.port, outputPath);
-      
-    } catch (error) {
-      console.log(`\n  ❌ Client ${index + 1}: Failed - ${error.message}`);
-    } finally {
-      client.close();
+function parseArgs() {
+    const args = process.argv.slice(2);
+    if (args.length < 3) {
+        console.error(
+            'Usage: node client-demo.js <host:port> <exposure-id-hex> <output-file>\n' +
+            '  host:port        — Exposer address, e.g. 127.0.0.1:9000\n' +
+            '  exposure-id-hex  — 32 hex characters (128-bit Exposure_ID)\n' +
+            '  output-file      — Path to write the received file'
+        );
+        process.exit(1);
     }
-  }
-  
-  displayFinalStats() {
-    console.log('\n📊 Final Download Statistics:');
-    console.log('============================');
-    console.log(`Total attempted: ${this.totalDownloads}`);
-    console.log(`Successfully completed: ${this.downloadsCompleted}`);
-    console.log(`Success rate: ${((this.downloadsCompleted / this.totalDownloads) * 100).toFixed(1)}%`);
-    
-    // Calculate aggregate stats
-    const totalBytes = this.clients.reduce((sum, client) => {
-      return sum + (client.stats?.bytesTransferred || 0);
-    }, 0);
-    
-    console.log(`Total data transferred: ${rgtp.formatBytes(totalBytes)}`);
-    
-    // Average throughput
-    const avgThroughput = this.clients.reduce((sum, client) => {
-      return sum + (client.stats?.avgThroughputMbps || 0);
-    }, 0) / this.clients.length;
-    
-    console.log(`Average throughput: ${avgThroughput.toFixed(2)} MB/s`);
-  }
-  
-  async cleanup() {
-    console.log('\n🧹 Cleaning up downloaded files...');
-    
-    // Close all clients
-    for (const client of this.clients) {
-      if (!client.isClosed) {
-        client.close();
-      }
+
+    const [serverArg, exposureIdHex, outputFile] = args;
+
+    const lastColon = serverArg.lastIndexOf(':');
+    if (lastColon < 0) {
+        console.error(`Error: invalid server address '${serverArg}' (expected host:port)`);
+        process.exit(1);
     }
-    
-    // Remove downloaded files
-    const downloadPattern = path.join(__dirname, 'downloaded-from-*.txt');
-    const files = await fs.readdir(__dirname);
-    const downloadedFiles = files.filter(f => f.startsWith('downloaded-from-'));
-    
-    for (const file of downloadedFiles) {
-      try {
-        await fs.unlink(path.join(__dirname, file));
-        console.log(`  🗑️  Removed ${file}`);
-      } catch (error) {
-        // File might not exist
-      }
+    const host = serverArg.slice(0, lastColon);
+    const port = parseInt(serverArg.slice(lastColon + 1), 10);
+
+    if (!exposureIdHex.match(/^[0-9a-fA-F]{32}$/)) {
+        console.error(`Error: invalid exposure ID '${exposureIdHex}' (expected 32 hex chars)`);
+        process.exit(1);
     }
-    
-    console.log('✅ Cleanup complete');
-  }
+
+    return { host, port, exposureIdHex, outputFile };
 }
 
-// Demo scenarios
-async function runSingleServerDemo() {
-  console.log('🎯 Single Server Demo');
-  console.log('====================');
-  
-  const client = new RGTPClientDemo();
-  
-  process.on('SIGINT', async () => {
-    await client.cleanup();
-    process.exit(0);
-  });
-  
-  try {
-    await client.start([
-      { host: 'localhost', port: 9999 }
-    ]);
-  } catch (error) {
-    console.error('💥 Demo failed:', error.message);
-  } finally {
-    await client.cleanup();
-  }
-}
-
-async function runMultipleServersDemo() {
-  console.log('🎯 Multiple Servers Demo');
-  console.log('========================');
-  
-  const client = new RGTPClientDemo();
-  
-  process.on('SIGINT', async () => {
-    await client.cleanup();
-    process.exit(0);
-  });
-  
-  try {
-    await client.start([
-      { host: 'localhost', port: 9999 },
-      { host: 'localhost', port: 10000 },
-      { host: 'localhost', port: 10001 }
-    ]);
-  } catch (error) {
-    console.error('💥 Demo failed:', error.message);
-  } finally {
-    await client.cleanup();
-  }
-}
-
-// Main execution
 async function main() {
-  const args = process.argv.slice(2);
-  const demoType = args[0] || 'single';
-  
-  switch (demoType) {
-    case 'single':
-      await runSingleServerDemo();
-      break;
-    case 'multiple':
-      await runMultipleServersDemo();
-      break;
-    default:
-      console.log('Usage: node client-demo.js [single|multiple]');
-      console.log('  single   - Download from one server (default)');
-      console.log('  multiple - Download from multiple servers');
-      process.exit(1);
-  }
+    const { host, port, exposureIdHex, outputFile } = parseArgs();
+    const exposureId = Buffer.from(exposureIdHex, 'hex');
+
+    console.log(`RGTP Client Demo`);
+    console.log(`  Server      : ${host}:${port}`);
+    console.log(`  Exposure ID : ${exposureIdHex}`);
+    console.log(`  Output      : ${outputFile}`);
+    console.log();
+
+    // ── Create socket and start pull ──────────────────────────────────
+    let sock, surface;
+    try {
+        sock    = await rgtp.createSocket({ windowSize: 64 });
+        surface = await rgtp.pullStart(
+            sock,
+            { host, port },
+            exposureId,
+            { windowSize: 64, timeoutMs: 30000 }
+        );
+    } catch (err) {
+        console.error('Failed to start pull:', err.message);
+        if (err instanceof rgtp.RgtpError) {
+            console.error(`  Error code: ${err.code}`);
+        }
+        process.exit(1);
+    }
+
+    // ── Receive chunks ────────────────────────────────────────────────
+    const chunks   = new Map();
+    const startTime = Date.now();
+    let   authFailures = 0;
+
+    console.log('Receiving chunks...\n');
+
+    while (surface.progress() < 1.0) {
+        try {
+            const { data, chunkIndex } = await rgtp.pullNext(surface, 65536);
+            chunks.set(chunkIndex, data);
+        } catch (err) {
+            if (err instanceof rgtp.RgtpError) {
+                if (err.code === -12) continue;           // RGTP_ERR_TIMEOUT
+                if (err.code === -7)  { authFailures++; continue; } // RGTP_ERR_AUTH_FAIL
+                if (err.code === -8)  { continue; }       // RGTP_ERR_MERKLE_FAIL — skip
+            }
+            console.error('\nPull error:', err.message);
+            break;
+        }
+
+        const elapsed  = (Date.now() - startTime) / 1000;
+        const received = [...chunks.values()].reduce((s, b) => s + b.length, 0);
+        const mbps     = received / Math.max(elapsed, 0.001) / 1_048_576;
+        const pct      = (surface.progress() * 100).toFixed(1);
+
+        process.stdout.write(
+            `\r  ${pct.padStart(5)}%`
+            + `  ${rgtp.formatBytes(received).padEnd(12)}`
+            + `  ${mbps.toFixed(1)} MB/s`
+            + `  ${elapsed.toFixed(0)}s   `
+        );
+    }
+
+    // ── Write output file ─────────────────────────────────────────────
+    console.log('\n');
+    const sortedChunks = [...chunks.keys()].sort((a, b) => a - b).map(k => chunks.get(k));
+    const output       = Buffer.concat(sortedChunks);
+
+    fs.writeFileSync(outputFile, output);
+
+    // ── Summary ───────────────────────────────────────────────────────
+    const elapsed = (Date.now() - startTime) / 1000;
+    console.log(`Done.`);
+    console.log(`  Received      : ${rgtp.formatBytes(output.length)}`);
+    console.log(`  Output        : ${outputFile}`);
+    console.log(`  Time          : ${elapsed.toFixed(1)}s`);
+    console.log(`  Avg speed     : ${(output.length / elapsed / 1_048_576).toFixed(1)} MB/s`);
+    if (authFailures > 0) {
+        console.log(`  Auth failures : ${authFailures} (chunks discarded)`);
+    }
+
+    // ── Teardown ──────────────────────────────────────────────────────
+    surface.close();
+    sock.close();
 }
 
-main();
+main().catch(err => {
+    console.error('Unexpected error:', err.message);
+    process.exit(1);
+});
