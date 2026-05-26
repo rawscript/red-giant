@@ -5,6 +5,7 @@ Welcome to the Red Giant Transport Protocol (RGTP) documentation.
 ## Quick Navigation
 
 - [Getting Started](getting-started.md)
+- [Architecture & Diagrams](architecture.md)
 - [Protocol Specification](protocol-spec.md)
 - [Limitations & Roadmap](limitations.md)
 
@@ -30,35 +31,19 @@ The core design is built around a strict separation of roles:
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    Application Layer                         │
-│          C / Go / Node.js / Python Application               │
-└──────────────────┬───────────────────────────────────────────┘
-                   │
-┌──────────────────▼───────────────────────────────────────────┐
-│                  Public C API  (rgtp.h)                      │
-│   rgtp_expose / rgtp_poll / rgtp_pull_start / rgtp_pull_next │
-└──────────────────┬───────────────────────────────────────────┘
-                   │
-┌──────────────────▼───────────────────────────────────────────┐
-│                   Transport Layer                            │
-│   Exposer · Puller · AIMD Flow Control · Anti-Replay         │
-│   Rate Limiter · Sliding Window · NAT Traversal              │
-├──────────────────────────────────────────────────────────────┤
-│                   Wire Protocol Layer                        │
-│   Packet Parser · Serializer · 8 Packet Types                │
-├──────────────────────────────────────────────────────────────┤
-│   Cryptographic Layer          │   FEC Layer                 │
-│   AEAD · Merkle · CSPRNG       │   GF(2^8) · RS · SIMD       │
-├──────────────────────────────────────────────────────────────┤
-│                      I/O Layer                               │
-│   UDP · Raw Ethernet · sendmmsg · io_uring · IOCP            │
-├──────────────────────────────────────────────────────────────┤
-│                   Observability                              │
-│   Prometheus Metrics · OpenTelemetry Spans · Structured Log  │
-└──────────────────────────────────────────────────────────────┘
-```
+See [Architecture & Diagrams](architecture.md) for full Mermaid diagrams covering:
+
+- Layered architecture and module decomposition
+- Exposer and puller data flows (sequence diagrams)
+- Wire protocol packet flow (all 8 packet types)
+- Cryptographic pipeline (encrypt at expose time, decrypt+verify at pull time)
+- AIMD flow control and adaptive FEC feedback loop
+- I/O backend selection decision tree
+- FEC encode/decode pipeline
+- Automotive middleware integration (ROS2, DDS, SOME/IP)
+- Observability pipeline (Prometheus, OpenTelemetry, structured logging)
+- Exposer and puller state machines
+- Module dependency graph
 
 ## Language Bindings
 
