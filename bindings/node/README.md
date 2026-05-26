@@ -1,254 +1,204 @@
-﻿# Red Giant Transport Protocol (RGTP) - Node.js Bindings
+﻿# rgtp — Node.js binding for the Red Giant Transport Protocol
 
-High-performance UDP-based transport protocol for Node.js with full JavaScript API.
+[![npm version](https://badge.fury.io/js/rgtp.svg)](https://www.npmjs.com/package/rgtp)
+[![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-**Key Features:**
-- **Session/Client Architecture** - Event-driven file transfer
-- **Progress Tracking** - Real-time transfer monitoring
-- **Configuration Presets** - Optimized for LAN/WAN/mobile
-- **Cross-platform** - Works on Windows, macOS, and Linux
-- **Native Performance** - Built on proven C core implementation
+RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verified,
+FEC-protected data transport protocol over UDP and raw Ethernet.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![NPM Version](https://img.shields.io/npm/v/rgtp.svg)](https://www.npmjs.com/package/rgtp)
-[![Build Status](https://img.shields.io/github/workflow/status/rawscript/red-giant/CI)](https://github.com/rawscript/red-giant/actions)
+This package provides Node.js 18/20/22 LTS bindings via N-API with full Promise-based
+async/await support and a Node.js `Readable` stream interface for pull operations.
 
 ## Installation
-
-### Quick Install
 
 ```bash
 npm install rgtp
 ```
 
-### Prerequisites
-
-- Node.js 14.0.0 or higher
-- npm 6.0.0 or higher
-- Build tools (automatically installed on most systems)
-
-The package includes pre-built binaries for major platforms.
+The package requires `librgtp` to be installed on your system. See the
+[main repository](https://github.com/rawscript/red-giant) for build instructions.
 
 ## Quick Start
 
-### Server Side (Expose a File)
+### Expose data (server side)
 
 ```javascript
 const rgtp = require('rgtp');
 
-// Create server session
-const session = new rgtp.Session({
-  port: 9999,
-  adaptiveMode: true
+await rgtp.init();
+
+const sock    = await rgtp.createSocket({ port: 9000 });
+const data    = require('fs').readFileSync('large-file.bin');
+const surface = await rgtp.expose(sock, data, {
+    fecEnabled:   true,
+    fecK:         223,
+    fecN:         255,
+    merkleProofs: true,
 });
 
-// Listen for events
-session.on('exposeStart', (filePath, fileSize) => {
-  console.log(`Exposing ${filePath} (${fileSize} bytes)`);
-});
+console.log('Exposure ID:', surface.exposureId().toString('hex'));
+// Distribute the exposure ID and key out-of-band to pullers
 
-session.on('progress', (transferred, total) => {
-  const percent = ((transferred / total) * 100).toFixed(1);
-  console.log(`Progress: ${percent}%`);
-});
+// Serve pull requests until done
+while (true) {
+    await surface.poll(1000);
+}
 
-session.on('error', (error) => {
-  console.error('Error:', error.message);
-});
-
-// Expose file
-await session.exposeFile('large-file.bin');
-console.log('File exposed successfully!');
-
-// Get statistics
-const stats = await session.getStats();
-console.log(`Transferred: ${rgtp.formatBytes(stats.bytesTransferred)}`);
-console.log(`Throughput: ${stats.avgThroughputMbps.toFixed(2)} MB/s`);
-
-// Cleanup
-session.close();
+surface.close();
+sock.close();
 ```
 
-### Client Side (Pull a File)
+### Pull data (client side)
 
 ```javascript
 const rgtp = require('rgtp');
+const fs   = require('fs');
 
-// Create client
-const client = new rgtp.Client({
-  timeout: 30000
-});
+await rgtp.init();
 
-// Listen for events
-client.on('pullStart', (host, port, outputPath) => {
-  console.log(`Downloading from ${host}:${port} to ${outputPath}`);
-});
+const sock       = await rgtp.createSocket();
+const exposureId = Buffer.from('<32-hex-chars>', 'hex');
+const surface    = await rgtp.pullStart(sock, { host: '192.168.1.10', port: 9000 }, exposureId);
 
-client.on('progress', (transferred, total) => {
-  const percent = ((transferred / total) * 100).toFixed(1);
-  console.log(`Download progress: ${percent}%`);
-});
+// Option 1: chunk-by-chunk
+const chunks = new Map();
+while (surface.progress() < 1.0) {
+    const { data, chunkIndex } = await rgtp.pullNext(surface);
+    chunks.set(chunkIndex, data);
+}
+const output = Buffer.concat([...chunks.keys()].sort((a,b)=>a-b).map(k => chunks.get(k)));
+fs.writeFileSync('output.bin', output);
 
-client.on('pullComplete', (outputPath) => {
-  console.log(`Download complete: ${outputPath}`);
-});
+// Option 2: Readable stream
+surface.createReadStream().pipe(fs.createWriteStream('output.bin'));
 
-// Pull file
-await client.pullToFile('192.168.1.100', 9999, 'downloaded-file.bin');
-console.log('File downloaded successfully!');
-
-// Get statistics
-const stats = await client.getStats();
-console.log(`Received: ${rgtp.formatBytes(stats.bytesTransferred)}`);
-
-// Cleanup
-client.close();
+surface.close();
+sock.close();
 ```
 
-## Convenience Functions
+### TypeScript
 
-For simple use cases:
+```typescript
+import * as rgtp from 'rgtp';
 
-```javascript
-const rgtp = require('rgtp');
-
-// Send a file (one-liner)
-const sendStats = await rgtp.sendFile('my-file.bin', { port: 9999 });
-
-// Receive a file (one-liner)
-const receiveStats = await rgtp.receiveFile('host', 9999, 'output.bin');
-```
-
-## Configuration Presets
-
-```javascript
-const rgtp = require('rgtp');
-
-// High-bandwidth LAN
-const lanSession = new rgtp.Session(rgtp.createLANConfig());
-
-// Variable bandwidth WAN
-const wanClient = new rgtp.Client(rgtp.createWANConfig());
-
-// Mobile/limited bandwidth
-const mobileSession = new rgtp.Session(rgtp.createMobileConfig());
+await rgtp.init();
+const sock    = await rgtp.createSocket({ port: 9000 });
+const surface = await rgtp.expose(sock, data, { fecEnabled: true });
+const id: Buffer = surface.exposureId();
 ```
 
 ## API Reference
 
-### RGTPSession
+### Library lifecycle
 
-**Constructor:**
 ```javascript
-new rgtp.Session(options)
+await rgtp.init()       // Initialise library (call once)
+rgtp.cleanup()          // Release global resources
+rgtp.version()          // Returns "1.0.0"
 ```
 
-**Options:**
-- `port` - Port to listen on (0 = auto)
-- `chunkSize` - Chunk size in bytes (default: 1MB)
-- `adaptiveMode` - Enable adaptive rate control (default: true)
-- `timeout` - Operation timeout in ms (default: 30000)
+### Socket
 
-**Methods:**
-- `exposeFile(filePath)` - Expose a file for transfer
-- `waitComplete()` - Wait for all transfers to complete
-- `getStats()` - Get transfer statistics
-- `close()` - Close the session
-
-**Events:**
-- `exposeStart` - File exposure started
-- `progress` - Transfer progress update
-- `error` - Error occurred
-- `close` - Session closed
-
-### RGTPClient
-
-**Constructor:**
 ```javascript
-new rgtp.Client(options)
+const sock = await rgtp.createSocket({ port: 9000 })
+sock.boundPort()        // Returns the actual bound port
+sock.close()
 ```
 
-**Options:**
-- `timeout` - Connection timeout in ms (default: 30000)
-- `chunkSize` - Preferred chunk size (default: 1MB)
-- `adaptiveMode` - Enable adaptive mode (default: true)
+### Exposer
 
-**Methods:**
-- `pullToFile(host, port, outputPath)` - Pull file from server
-- `getStats()` - Get transfer statistics
-- `close()` - Close the client
-
-**Events:**
-- `pullStart` - File download started
-- `progress` - Download progress update
-- `pullComplete` - Download completed
-- `error` - Error occurred
-- `close` - Client closed
-
-## HTTP/Web3 Adapters
-
-The package includes adapters for familiar interfaces while using RGTP UDP core:
-
-### HTTP Adapter
 ```javascript
-const { RGTPHTTPAdapter } = require('rgtp/http-adapter');
-
-const httpAdapter = new RGTPHTTPAdapter({
-  port: 8080,      // HTTP interface port
-  rgtpPort: 9999   // RGTP UDP port
-});
-
-await httpAdapter.start();
-// Visit http://localhost:8080 for file browser
+const surface = await rgtp.expose(sock, data, options)
+await surface.poll(timeoutMs)     // Serve pull requests
+surface.exposureId()              // Buffer(16) — Exposure_ID
+surface.progress()                // 0.0 for exposer
+await surface.getStats()          // { bytesSent, chunksSent, pullPressure, ... }
+surface.close()                   // Zeroize key and free
 ```
 
-### Web3/IPFS Interface
+**expose options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `fecEnabled` | boolean | `false` | Enable Reed-Solomon FEC |
+| `fecK` | number | `223` | RS data symbols per block |
+| `fecN` | number | `255` | RS total symbols per block |
+| `merkleProofs` | boolean | `false` | Include per-chunk Merkle proofs |
+| `chunkSize` | number | `0` | Chunk size in bytes (0 = auto: 1200) |
+
+### Puller
+
 ```javascript
-const { RGTPWeb3Interface } = require('rgtp/http-adapter');
+const surface = await rgtp.pullStart(sock, { host, port }, exposureId, options)
+const { data, chunkIndex } = await rgtp.pullNext(surface, bufSize)
+surface.progress()                // [0.0, 1.0]
+surface.createReadStream()        // Node.js Readable stream
+surface.close()
+```
 
-const web3 = new RGTPWeb3Interface();
+**pullStart options:**
 
-// Add file (returns CID)
-const result = await web3.add('myfile.txt');
-console.log(`CID: ${result.cid}`);
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `windowSize` | number | `64` | Pull window size in chunks |
+| `timeoutMs` | number | `30000` | Connection timeout |
 
-// Retrieve file by CID
-await web3.get(result.cid, 'output.txt');
+### Errors
+
+All functions throw `RgtpError` on failure:
+
+```javascript
+try {
+    await rgtp.expose(sock, data);
+} catch (err) {
+    if (err instanceof rgtp.RgtpError) {
+        console.error(err.code);    // e.g. -1 (RGTP_ERR_NOMEM)
+        console.error(err.message); // human-readable
+    }
+}
+```
+
+| Code | Meaning |
+|------|---------|
+| -1 | `RGTP_ERR_NOMEM` — memory allocation failed |
+| -2 | `RGTP_ERR_INVALID_ARG` — invalid argument |
+| -3 | `RGTP_ERR_SOCKET` — socket operation failed |
+| -4 | `RGTP_ERR_CRYPTO_INIT` — crypto library init failed |
+| -5 | `RGTP_ERR_ENCRYPT` — AEAD encryption failed |
+| -6 | `RGTP_ERR_DECRYPT` — AEAD decryption failed |
+| -7 | `RGTP_ERR_AUTH_FAIL` — authentication tag mismatch |
+| -8 | `RGTP_ERR_MERKLE_FAIL` — Merkle proof verification failed |
+| -9 | `RGTP_ERR_FEC_FAIL` — FEC decoding failed |
+| -12 | `RGTP_ERR_TIMEOUT` — operation timed out |
+| -13 | `RGTP_ERR_RATE_LIMITED` — rate limit exceeded |
+| -14 | `RGTP_ERR_NOT_SUPPORTED` — feature not supported |
+
+### Utility
+
+```javascript
+rgtp.formatBytes(1048576)   // "1.00 MB"
+rgtp.createLANConfig()      // { chunkSize: 1400, windowSize: 256, timeoutMs: 10000 }
+rgtp.createWANConfig()      // { chunkSize: 1200, windowSize: 64,  timeoutMs: 30000 }
+rgtp.createMobileConfig()   // { ..., fecEnabled: true, fecK: 223, fecN: 255 }
 ```
 
 ## Examples
 
-Run the included examples:
-
 ```bash
-# Simple transfer demo
+# Simple loopback transfer (expose + pull in same process)
 npm run example
 
-# Server demo
-npm run examples:server
+# File server (expose a file, serve pull requests)
+npm run examples:server -- large-file.bin --port 9000 --fec
 
-# Client demo
-npm run examples:client
+# File client (pull a file from an exposer)
+npm run examples:client -- 127.0.0.1:9000 <exposure-id-hex> output.bin
 
-# HTTP/Web3 adapter demo
-npm run examples:http
+# HTTP bridge (expose files via HTTP interface)
+npm run examples:http -- --dir ./files --http-port 8080 --rgtp-port 9000
 ```
-
-## Performance Tips
-
-1. **Chunk Size**: Adjust based on network conditions
-2. **Adaptive Mode**: Keep enabled for optimal performance
-3. **Event Handling**: Use progress events for real-time feedback
-4. **Error Handling**: Always wrap operations in try-catch blocks
 
 ## License
 
-MIT - See LICENSE file for details.
-
-## Contributing
-
-Contributions welcome! Please read CONTRIBUTING.md for guidelines.
-
-## Support
-
-For issues and questions, please open an issue on GitHub.
+MIT — see [LICENSE](../../LICENSE).

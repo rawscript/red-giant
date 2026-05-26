@@ -1,0 +1,16 @@
+# Build artifacts not needed by consumers
+build/
+node_modules/
+
+# Test files
+test/
+
+# Examples (large, not needed at runtime)
+examples/
+
+# Source (consumers use the pre-built addon)
+src/
+
+# Dev config
+.npmrc
+.gitignore

@@ -1,360 +1,223 @@
-const EventEmitter = require('events');
-const http = require('http');
-const https = require('https');
-const url = require('url');
-const fs = require('fs').promises;
-const path = require('path');
+'use strict';
 
-// Load the core RGTP implementation
+/**
+ * http-adapter.js — HTTP bridge over RGTP.
+ *
+ * Provides an HTTP server that exposes files via RGTP and serves a
+ * browser-accessible file listing. Actual data transfer uses RGTP UDP
+ * under the hood.
+ *
+ * Usage:
+ *   const { RGTPHTTPAdapter } = require('rgtp/http-adapter');
+ *   const adapter = new RGTPHTTPAdapter({ httpPort: 8080, rgtpPort: 9000 });
+ *   await adapter.start('./files');
+ */
+
+const http = require('http');
+const fs   = require('fs');
+const path = require('path');
+const url  = require('url');
+
 const rgtp = require('./index.js');
 
-/**
- * HTTP Adapter for RGTP
- * Provides HTTP-like interface over pure UDP RGTP core
- */
-class RGTPHTTPAdapter extends EventEmitter {
-  constructor(options = {}) {
-    super();
-    this.options = {
-      port: options.port || 8080,
-      useSSL: options.useSSL || false,
-      rgtpPort: options.rgtpPort || 9999,
-      ...options
-    };
-    
-    this.server = null;
-    this.rgtpSessions = new Map();
-    this.activeTransfers = new Map();
-  }
-  
-  async start() {
-    return new Promise((resolve, reject) => {
-      const serverClass = this.options.useSSL ? https : http;
-      
-      this.server = serverClass.createServer(async (req, res) => {
-        await this.handleHTTPRequest(req, res);
-      });
-      
-      this.server.listen(this.options.port, () => {
-        console.log(`🚀 RGTP HTTP Adapter listening on port ${this.options.port}`);
-        console.log(`📡 RGTP core running on port ${this.options.rgtpPort}`);
-        resolve();
-      });
-      
-      this.server.on('error', reject);
-    });
-  }
-  
-  async handleHTTPRequest(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-    const pathname = parsedUrl.pathname;
-    
-    try {
-      if (req.method === 'GET') {
-        await this.handleGET(req, res, pathname, parsedUrl.query);
-      } else if (req.method === 'POST') {
-        await this.handlePOST(req, res, pathname);
-      } else {
-        this.sendError(res, 405, 'Method Not Allowed');
-      }
-    } catch (error) {
-      console.error('HTTP Handler Error:', error);
-      this.sendError(res, 500, 'Internal Server Error');
+// ── Exposure registry ─────────────────────────────────────────────────────
+
+class ExposureRegistry {
+    constructor() {
+        /** @type {Map<string, { surface: object, sock: object, filePath: string, size: number, exposureId: string }>} */
+        this._map = new Map();
     }
-  }
-  
-  async handleGET(req, res, pathname, query) {
-    // Serve static files or file listing
-    if (pathname === '/' || pathname === '/files') {
-      await this.serveFileListing(res);
-      return;
+
+    async expose(filePath, rgtpPort) {
+        const name = path.basename(filePath);
+        if (this._map.has(name)) return this._map.get(name);
+
+        const data = fs.readFileSync(filePath);
+        let sock, surface;
+        try {
+            sock    = await rgtp.createSocket({ port: rgtpPort });
+            surface = await rgtp.expose(sock, data, { merkleProofs: true });
+        } catch (err) {
+            throw new Error(`RGTP expose failed for ${name}: ${err.message}`);
+        }
+
+        const entry = {
+            surface,
+            sock,
+            filePath,
+            size:       data.length,
+            exposureId: surface.exposureId().toString('hex'),
+        };
+        this._map.set(name, entry);
+
+        // Background poll loop — serves pull requests until the surface is closed
+        (async () => {
+            while (entry.surface._handle) {
+                try { await surface.poll(200); } catch (_) { break; }
+            }
+        })();
+
+        return entry;
     }
-    
-    // Serve specific file
-    const fileName = pathname.substring(1); // Remove leading slash
-    const filePath = path.join(process.cwd(), fileName);
-    
-    try {
-      await fs.access(filePath);
-      // Create RGTP session for this file
-      const sessionId = this.generateSessionId();
-      const session = new rgtp.Session({ port: this.options.rgtpPort + this.rgtpSessions.size });
-      
-      this.rgtpSessions.set(sessionId, session);
-      
-      // Start exposing the file
-      await session.exposeFile(filePath);
-      
-      // Store transfer info
-      this.activeTransfers.set(sessionId, {
-        fileName,
-        filePath,
-        session,
-        startTime: Date.now()
-      });
-      
-      // Redirect to RGTP download endpoint
-      res.writeHead(302, {
-        'Location': `/download/${sessionId}`,
-        'Content-Type': 'text/html'
-      });
-      res.end(`
-        <html>
-          <head><title>RGTP Download</title></head>
-          <body>
-            <h1>Starting RGTP Transfer</h1>
-            <p>File: ${fileName}</p>
-            <p><a href="/download/${sessionId}">Click here to download via RGTP</a></p>
-            <p>Or connect directly to RGTP port: ${this.options.rgtpPort + this.rgtpSessions.size}</p>
-          </body>
-        </html>
-      `);
-      
-    } catch (error) {
-      this.sendError(res, 404, 'File Not Found');
-    }
-  }
-  
-  async handlePOST(req, res, pathname) {
-    if (pathname === '/upload') {
-      await this.handleUpload(req, res);
-    } else {
-      this.sendError(res, 404, 'Endpoint Not Found');
-    }
-  }
-  
-  async handleUpload(req, res) {
-    const boundary = this.parseBoundary(req.headers['content-type']);
-    if (!boundary) {
-      this.sendError(res, 400, 'Invalid Content-Type');
-      return;
-    }
-    
-    const uploadDir = path.join(process.cwd(), 'uploads');
-    await fs.mkdir(uploadDir, { recursive: true });
-    
-    const fileName = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const filePath = path.join(uploadDir, fileName);
-    
-    // Stream upload to file (simulating RGTP receive)
-    const writeStream = fs.createWriteStream(filePath);
-    
-    req.pipe(writeStream);
-    
-    writeStream.on('finish', async () => {
-      try {
-        // Create RGTP client to "pull" the uploaded file
-        const client = new rgtp.Client();
-        const sessionId = this.generateSessionId();
-        
-        this.activeTransfers.set(sessionId, {
-          fileName,
-          filePath,
-          client,
-          upload: true,
-          startTime: Date.now()
-        });
-        
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          success: true,
-          fileId: sessionId,
-          fileName: fileName,
-          size: (await fs.stat(filePath)).size,
-          rgtpPort: this.options.rgtpPort
+
+    list() {
+        return [...this._map.entries()].map(([name, e]) => ({
+            name,
+            size:       e.size,
+            exposureId: e.exposureId,
         }));
-        
-      } catch (error) {
-        this.sendError(res, 500, 'Upload Processing Failed');
-      }
-    });
-    
-    writeStream.on('error', (error) => {
-      this.sendError(res, 500, 'Upload Failed');
-    });
-  }
-  
-  async serveFileListing(res) {
-    try {
-      const files = await fs.readdir(process.cwd());
-      const fileList = await Promise.all(
-        files
-          .filter(f => !f.startsWith('.') && !fs.statSync(f).isDirectory())
-          .map(async (f) => {
-            const stat = await fs.stat(f);
-            return {
-              name: f,
-              size: stat.size,
-              modified: stat.mtime.toISOString()
-            };
-          })
-      );
-      
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>RGTP File Server</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 40px; }
-              table { border-collapse: collapse; width: 100%; }
-              th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-              th { background-color: #f2f2f2; }
-              tr:hover { background-color: #f5f5f5; }
-              a { color: #007bff; text-decoration: none; }
-              a:hover { text-decoration: underline; }
-            </style>
-          </head>
-          <body>
-            <h1>RGTP File Server</h1>
-            <p>Serving files over UDP protocol with HTTP interface</p>
-            <table>
-              <thead>
-                <tr>
-                  <th>File Name</th>
-                  <th>Size</th>
-                  <th>Last Modified</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${fileList.map(file => `
-                  <tr>
-                    <td>${file.name}</td>
-                    <td>${rgtp.formatBytes(file.size)}</td>
-                    <td>${new Date(file.modified).toLocaleString()}</td>
-                    <td><a href="/${file.name}">Download via RGTP</a></td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-            <hr>
-            <h2>Upload File</h2>
-            <form action="/upload" method="post" enctype="multipart/form-data">
-              <input type="file" name="file" required>
-              <button type="submit">Upload via RGTP</button>
-            </form>
-          </body>
-        </html>
-      `);
-    } catch (error) {
-      this.sendError(res, 500, 'Failed to read directory');
     }
-  }
-  
-  parseBoundary(contentType) {
-    const match = contentType.match(/boundary=(.+)$/);
-    return match ? match[1] : null;
-  }
-  
-  sendError(res, statusCode, message) {
-    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: message, code: statusCode }));
-  }
-  
-  generateSessionId() {
-    return Math.random().toString(36).substr(2, 9);
-  }
-  
-  async stop() {
-    if (this.server) {
-      this.server.close();
+
+    close() {
+        for (const { surface, sock } of this._map.values()) {
+            try { surface.close(); } catch (_) {}
+            try { sock.close();    } catch (_) {}
+        }
+        this._map.clear();
     }
-    
-    // Close all RGTP sessions
-    for (const [id, session] of this.rgtpSessions) {
-      try {
-        session.close();
-      } catch (error) {
-        // Ignore cleanup errors
-      }
-    }
-    
-    this.rgtpSessions.clear();
-    this.activeTransfers.clear();
-  }
 }
+
+// ── HTTP request handler ──────────────────────────────────────────────────
+
+function makeHandler(registry, opts) {
+    return async (req, res) => {
+        const { pathname } = url.parse(req.url);
+
+        // GET / — file listing
+        if (pathname === '/' || pathname === '/index.html') {
+            const files = registry.list();
+            const rows  = files.map(f =>
+                `<tr>
+                   <td><a href="/info/${encodeURIComponent(f.name)}">${f.name}</a></td>
+                   <td>${rgtp.formatBytes(f.size)}</td>
+                   <td style="font-family:monospace;font-size:0.85em">${f.exposureId}</td>
+                 </tr>`
+            ).join('\n');
+
+            const html = `<!DOCTYPE html>
+<html>
+<head><title>RGTP File Server</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2em; max-width: 1100px; margin: 0 auto; }
+  h1   { color: #c0392b; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1em; }
+  th, td { border: 1px solid #ddd; padding: .6em 1em; text-align: left; }
+  th { background: #f8f8f8; }
+  a  { color: #c0392b; }
+  code { background: #f4f4f4; padding: .1em .4em; border-radius: 3px; }
+</style></head>
+<body>
+<h1>RGTP File Server</h1>
+<p>Files are served over RGTP (UDP port <strong>${opts.rgtpPort}</strong>).
+   Click a file name to get its Exposure ID and pull command.</p>
+<table>
+  <tr><th>File</th><th>Size</th><th>Exposure ID</th></tr>
+  ${rows || '<tr><td colspan="3">No files exposed yet.</td></tr>'}
+</table>
+<hr>
+<p>Pull a file with the Node.js client:</p>
+<code>node examples/client-demo.js &lt;server-ip&gt;:${opts.rgtpPort} &lt;exposure-id&gt; output.bin</code>
+</body></html>`;
+
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(html);
+            return;
+        }
+
+        // GET /info/:name — JSON info for a specific file
+        const infoMatch = pathname.match(/^\/info\/(.+)$/);
+        if (infoMatch) {
+            const name     = decodeURIComponent(infoMatch[1]);
+            const filePath = path.join(opts.dir, name);
+
+            if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'File not found' }));
+                return;
+            }
+
+            try {
+                const entry = await registry.expose(filePath, opts.rgtpPort);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    file:       name,
+                    size:       entry.size,
+                    exposureId: entry.exposureId,
+                    rgtpPort:   opts.rgtpPort,
+                    pullCmd:    `node client-demo.js <server-ip>:${opts.rgtpPort} ${entry.exposureId} ${name}`,
+                }, null, 2));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not found');
+    };
+}
+
+// ── RGTPHTTPAdapter ───────────────────────────────────────────────────────
 
 /**
- * Web3/IPFS-style Interface for RGTP
+ * HTTP bridge that exposes files via RGTP and serves a browser file listing.
+ *
+ * @example
+ * const adapter = new RGTPHTTPAdapter({ httpPort: 8080, rgtpPort: 9000 });
+ * await adapter.start('./files');
+ * // Visit http://localhost:8080
  */
-class RGTPWeb3Interface {
-  constructor(options = {}) {
-    this.options = {
-      port: options.port || 5001,
-      ...options
-    };
-    
-    this.cidMap = new Map(); // CID -> file mapping
-    this.fileMap = new Map(); // file -> CID mapping
-  }
-  
-  async add(filePath) {
-    try {
-      const data = await fs.readFile(filePath);
-      const cid = this.generateCID(data);
-      
-      // Store mapping
-      this.cidMap.set(cid, filePath);
-      this.fileMap.set(filePath, cid);
-      
-      // In a real implementation, this would use RGTP to distribute
-      console.log(`Added ${filePath} with CID: ${cid}`);
-      
-      return {
-        cid: cid,
-        path: filePath,
-        size: data.length
-      };
-    } catch (error) {
-      throw new Error(`Failed to add file: ${error.message}`);
+class RGTPHTTPAdapter {
+    /**
+     * @param {object} [options]
+     * @param {number} [options.httpPort=8080]  - HTTP server port
+     * @param {number} [options.rgtpPort=9000]  - RGTP UDP port for exposures
+     */
+    constructor(options = {}) {
+        this._opts = {
+            httpPort: options.httpPort || 8080,
+            rgtpPort: options.rgtpPort || 9000,
+            dir:      options.dir || process.cwd(),
+        };
+        this._registry = new ExposureRegistry();
+        this._server   = null;
     }
-  }
-  
-  async get(cid, outputPath) {
-    const filePath = this.cidMap.get(cid);
-    if (!filePath) {
-      throw new Error(`CID ${cid} not found`);
+
+    /**
+     * Start the HTTP server and pre-expose all files in the directory.
+     * @param {string} [dir]  - Directory to serve (overrides constructor option)
+     * @returns {Promise<void>}
+     */
+    async start(dir) {
+        if (dir) this._opts.dir = path.resolve(dir);
+
+        // Pre-expose all files in the directory
+        const files = fs.readdirSync(this._opts.dir).filter(f => {
+            const full = path.join(this._opts.dir, f);
+            return fs.statSync(full).isFile();
+        });
+
+        for (const f of files) {
+            try {
+                await this._registry.expose(path.join(this._opts.dir, f), this._opts.rgtpPort);
+            } catch (err) {
+                console.error(`[rgtp-http] Failed to expose ${f}: ${err.message}`);
+            }
+        }
+
+        return new Promise((resolve, reject) => {
+            this._server = http.createServer(makeHandler(this._registry, this._opts));
+            this._server.listen(this._opts.httpPort, () => resolve());
+            this._server.on('error', reject);
+        });
     }
-    
-    try {
-      // In a real implementation, this would use RGTP to fetch from network
-      await fs.copyFile(filePath, outputPath);
-      console.log(`Retrieved ${cid} to ${outputPath}`);
-      return outputPath;
-    } catch (error) {
-      throw new Error(`Failed to retrieve file: ${error.message}`);
+
+    /** Stop the HTTP server and close all RGTP exposures. */
+    stop() {
+        if (this._server) this._server.close();
+        this._registry.close();
     }
-  }
-  
-  async ls() {
-    const entries = [];
-    for (const [cid, filePath] of this.cidMap) {
-      const stat = await fs.stat(filePath);
-      entries.push({
-        cid: cid,
-        name: path.basename(filePath),
-        size: stat.size,
-        added: stat.birthtime.toISOString()
-      });
-    }
-    return entries;
-  }
-  
-  generateCID(data) {
-    // Simplified CID generation - in reality would use proper hashing
-    const hash = require('crypto').createHash('sha256');
-    hash.update(data);
-    return `Qm${hash.digest('hex').substring(0, 44)}`;
-  }
 }
 
-// Export both adapters
-module.exports = {
-  RGTPHTTPAdapter,
-  RGTPWeb3Interface,
-  // Backwards compatibility
-  HTTPAdapter: RGTPHTTPAdapter,
-  Web3Interface: RGTPWeb3Interface
-};
+module.exports = { RGTPHTTPAdapter };

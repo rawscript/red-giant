@@ -1,6 +1,6 @@
 {
   "name": "rgtp",
-  "version": "1.0.0",
+  "version": "4.0.0",
   "description": "Red Giant Transport Protocol — stateless, receiver-driven, pre-encrypted, Merkle-verified, FEC-protected data transport over UDP and raw Ethernet",
   "main": "index.js",
   "types": "index.d.ts",
