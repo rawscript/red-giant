@@ -6,30 +6,31 @@ This document describes the current implementation status of the RGTP core overh
 
 ## Implementation Status
 
-The overhaul is structured as 23 numbered tasks. The table below summarizes completion by subsystem.
+All 23 task groups are complete, including all optional property-based tests and binding test suites.
 
 | Subsystem | Tasks | Status |
 |-----------|-------|--------|
-| CMake build system | 1 | Complete |
-| Core infrastructure (`rgtp_error`, `rgtp_alloc`, `rgtp_init`) | 2.1–2.3 | Complete |
-| Cryptographic subsystem (AEAD, CSPRNG, zeroization) | 3.1–3.3 | Complete |
-| Merkle tree (hash, build, proof, verify) | 4.1–4.2 | Complete |
-| FEC subsystem (GF(2^8), RS encode, RS decode, SIMD) | 5.1–5.4 | Complete |
-| Wire protocol (packet types, serializer, parser) | 7.1–7.3 | Complete |
-| Transport — anti-replay, rate limiter, flow control | 8.1, 8.3, 8.4 | Complete |
-| Transport — surface, exposer, puller state machines | 9.1–9.3 | Complete |
-| Sliding-window, partial pull, streaming modes | 11.1–11.3 | Complete |
-| I/O layer (socket, sendmmsg, io_uring, IOCP, raw Ethernet) | 12.1–12.5 | Complete |
-| Low-latency, priority scheduling, NAT traversal | 13.1–13.3 | Complete |
-| Observability (logging, Prometheus metrics, OpenTelemetry) | 14.1–14.3 | Complete |
-| Automotive middleware (ROS2, DDS, SOME/IP) | 16.1–16.3 | Complete |
-| Language bindings (Node.js, Go, Python) | 17.1–17.3 | Complete |
-| Unit test suite | 18.1–18.5 | Complete |
-| Integration, fuzz, and regression tests | 19.1–19.5 | Complete |
-| CI/CD pipeline and benchmark suite | 21.1–21.3 | Complete |
-| Packaging (Conan, vcpkg) | 22.1 | Complete |
-| Property-based tests | 3.4, 4.3, 5.5, 7.4, 8.2, 8.5, 9.4, 11.4, 17.4 | Complete |
-| Documentation | 22.2 | Complete |
+| CMake build system | 1 | ✅ Complete |
+| Core infrastructure (`rgtp_error`, `rgtp_alloc`, `rgtp_init`) | 2.1–2.3 | ✅ Complete |
+| Cryptographic subsystem (AEAD, CSPRNG, zeroization) | 3.1–3.3 | ✅ Complete |
+| Merkle tree (hash, build, proof, verify) | 4.1–4.2 | ✅ Complete |
+| FEC subsystem (GF(2^8), RS encode, RS decode, SIMD) | 5.1–5.4 | ✅ Complete |
+| Wire protocol (packet types, serializer, parser) | 7.1–7.3 | ✅ Complete |
+| Transport — anti-replay, rate limiter, flow control | 8.1, 8.3, 8.4 | ✅ Complete |
+| Transport — surface, exposer, puller state machines | 9.1–9.3 | ✅ Complete |
+| Sliding-window, partial pull, streaming modes | 11.1–11.3 | ✅ Complete |
+| I/O layer (socket, sendmmsg, io_uring, IOCP, raw Ethernet) | 12.1–12.5 | ✅ Complete |
+| Low-latency, priority scheduling, NAT traversal | 13.1–13.3 | ✅ Complete |
+| Observability (logging, Prometheus metrics, OpenTelemetry) | 14.1–14.3 | ✅ Complete |
+| Automotive middleware (ROS2, DDS, SOME/IP) | 16.1–16.3 | ✅ Complete |
+| Language bindings (Node.js, Go, Python) | 17.1–17.3 | ✅ Complete |
+| Unit test suite | 18.1–18.5 | ✅ Complete |
+| Integration, fuzz, and regression tests | 19.1–19.5 | ✅ Complete |
+| CI/CD pipeline and benchmark suite | 21.1–21.3 | ✅ Complete |
+| Packaging (Conan, vcpkg) | 22.1 | ✅ Complete |
+| Property-based tests (12 properties) | 3.4, 4.3, 5.5, 7.4, 8.2, 8.5, 9.4, 11.4 | ✅ Complete |
+| Binding test suites (Node.js, Go, Python) | 17.4 | ✅ Complete |
+| Documentation | 22.2 | ✅ Complete |
 
 ---
 

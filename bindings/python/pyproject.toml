@@ -23,8 +23,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/red-giant"
-Documentation = "https://your-org.github.io/red-giant"
+Homepage = "https://github.com/rawscript/red-giant"
+Documentation = "https://rawscript.github.io/red-giant"
 
 [tool.setuptools.packages.find]
 where = ["."]
