@@ -1,0 +1,176 @@
+# rgtp — Python bindings for the Red Giant Transport Protocol
+
+[![PyPI version](https://badge.fury.io/py/rgtp.svg)](https://pypi.org/project/rgtp/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/rgtp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
+
+RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verified,
+FEC-protected data transport protocol over UDP and raw Ethernet.
+
+This package provides Python 3.9+ bindings via ctypes, with full `asyncio` async/await support.
+
+## Installation
+
+```bash
+pip install rgtp
+```
+
+The package requires `librgtp` to be installed on your system. See the
+[main repository](https://github.com/rawscript/red-giant) for build instructions.
+
+Set `RGTP_LIB_PATH` to point to the library if it is not on the default search path:
+
+```bash
+export RGTP_LIB_PATH=/usr/local/lib/librgtp.so
+pip install rgtp
+```
+
+## Quick Start
+
+### Expose data (server side)
+
+```python
+import rgtp
+
+rgtp.init()
+
+with rgtp.Socket() as sock:
+    data = open("large-file.bin", "rb").read()
+    with rgtp.expose(sock, data) as surface:
+        exposure_id = surface.exposure_id()
+        print(f"Exposure ID: {exposure_id.hex()}")
+        # distribute exposure_id and key out-of-band to pullers
+
+        # Serve pull requests until done
+        while True:
+            rgtp.poll(surface, timeout_ms=1000)
+
+rgtp.cleanup()
+```
+
+### Pull data (client side)
+
+```python
+import rgtp
+
+rgtp.init()
+
+with rgtp.Socket() as sock:
+    surface = rgtp.pull_start(sock, ("192.168.1.10", 9000), exposure_id)
+    with surface:
+        chunks = {}
+        while surface.progress() < 1.0:
+            data, chunk_index = rgtp.pull_next(surface)
+            chunks[chunk_index] = data
+
+rgtp.cleanup()
+```
+
+### Async/await
+
+```python
+import asyncio
+import rgtp
+
+async def expose_file(path: str) -> None:
+    rgtp.init()
+    data = open(path, "rb").read()
+    with rgtp.Socket() as sock:
+        surface = await rgtp.async_expose(sock, data)
+        with surface:
+            print(f"Exposure ID: {surface.exposure_id().hex()}")
+            while True:
+                rgtp.poll(surface, timeout_ms=100)
+
+asyncio.run(expose_file("large-file.bin"))
+```
+
+## CLI
+
+The package installs two command-line tools:
+
+```bash
+# Expose a file
+rgtp-expose large-file.bin --port 9000
+
+# Pull a file
+rgtp-pull 192.168.1.10:9000 <exposure-id-hex> output.bin
+```
+
+## API Reference
+
+### Library lifecycle
+
+```python
+rgtp.init()          # Must be called once before any other function
+rgtp.cleanup()       # Release all global resources
+rgtp.version()       # Returns version string e.g. "1.0.0"
+rgtp.strerror(code)  # Human-readable error description
+```
+
+### Socket
+
+```python
+sock = rgtp.Socket()   # Create and bind a UDP socket
+sock.close()           # Destroy socket (also called by context manager)
+```
+
+### Exposer
+
+```python
+surface = rgtp.expose(sock, data: bytes) -> rgtp.Surface
+rgtp.poll(surface, timeout_ms=100)        # Serve pull requests
+surface.exposure_id() -> bytes            # 16-byte Exposure_ID
+surface.progress() -> float               # Always 0.0 for exposer
+surface.close()                           # Zeroize key and free
+```
+
+### Puller
+
+```python
+surface = rgtp.pull_start(sock, (host, port), exposure_id: bytes)
+data, chunk_index = rgtp.pull_next(surface, buf_size=65536)
+surface.progress() -> float               # [0.0, 1.0]
+```
+
+### Async wrappers
+
+```python
+surface = await rgtp.async_expose(sock, data)
+data, idx = await rgtp.async_pull_next(surface, buf_size=65536)
+```
+
+### Exceptions
+
+```python
+try:
+    rgtp.init()
+except rgtp.RgtpError as e:
+    print(e.code)     # e.g. -4 (RGTP_ERR_CRYPTO_INIT)
+    print(e.message)  # human-readable description
+```
+
+## Error Codes
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| 0 | `RGTP_OK` | Success |
+| -1 | `RGTP_ERR_NOMEM` | Memory allocation failed |
+| -2 | `RGTP_ERR_INVALID_ARG` | Invalid argument |
+| -3 | `RGTP_ERR_SOCKET` | Socket operation failed |
+| -4 | `RGTP_ERR_CRYPTO_INIT` | Crypto library init failed |
+| -5 | `RGTP_ERR_ENCRYPT` | AEAD encryption failed |
+| -6 | `RGTP_ERR_DECRYPT` | AEAD decryption failed |
+| -7 | `RGTP_ERR_AUTH_FAIL` | Authentication tag mismatch |
+| -8 | `RGTP_ERR_MERKLE_FAIL` | Merkle proof verification failed |
+| -9 | `RGTP_ERR_FEC_FAIL` | FEC decoding failed |
+| -10 | `RGTP_ERR_TRUNCATED` | Packet truncated |
+| -11 | `RGTP_ERR_CHUNK_INDEX_OOB` | Chunk index out of bounds |
+| -12 | `RGTP_ERR_TIMEOUT` | Operation timed out |
+| -13 | `RGTP_ERR_RATE_LIMITED` | Rate limit exceeded |
+| -14 | `RGTP_ERR_NOT_SUPPORTED` | Feature not supported |
+| -15 | `RGTP_ERR_INTERNAL` | Internal invariant violation |
+
+## License
+
+MIT — see [LICENSE](../../LICENSE).
