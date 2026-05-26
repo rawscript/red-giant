@@ -1,310 +1,280 @@
+// Package rgtp provides Go bindings for the Red Giant Transport Protocol.
+//
+// All blocking operations accept a context.Context for cancellation.
+// C memory is managed by the library; Go buffers are pinned for the
+// duration of each call using runtime.Pinner.
+//
+// Requirements: 14.4, 14.5, 14.8, 23.5
 package rgtp
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../../include
-#cgo LDFLAGS: -L${SRCDIR}/../../src/core -lrgtp
+#cgo CFLAGS: -I../../include
+#cgo LDFLAGS: -lrgtp -lsodium
 
 #include "rgtp/rgtp.h"
 #include <stdlib.h>
+#include <string.h>
 */
 import "C"
+
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
+	"runtime"
 	"unsafe"
 )
 
-// Config represents RGTP configuration
-type Config struct {
-	ChunkSize         uint32
-	ExposureRate      uint32
-	AdaptiveMode      bool
-	EnableCompression bool
-	EnableEncryption  bool
-	Port              uint16
-	TimeoutMs         int
-	UserData          unsafe.Pointer
+// ── Error type ───────────────────────────────────────────────────────────
+
+// Error wraps an RGTP error code.
+type Error struct {
+	Code    int
+	Message string
 }
 
-// Stats represents RGTP statistics
-type Stats struct {
-	BytesSent         uint64
-	BytesReceived     uint64
-	ChunksSent        uint32
-	ChunksReceived    uint32
-	PacketLossRate    float32
-	RttMs             int
-	PacketsLost       uint32
-	Retransmissions   uint32
-	AvgThroughputMbps float32
-	CompletionPercent float32
-	ActiveConnections uint32
+func (e *Error) Error() string {
+	return fmt.Sprintf("rgtp error %d: %s", e.Code, e.Message)
 }
 
-// Session represents an RGTP session
-type Session struct {
-	cSession *C.rgtp_session_t
-	config   *Config
-}
-
-// Client represents an RGTP client
-type Client struct {
-	cClient *C.rgtp_client_t
-	config  *Config
-}
-
-// Surface represents an RGTP surface
-type Surface struct {
-	cSurface *C.rgtp_surface_t
-}
-
-// Initialize initializes the RGTP library
-func Initialize() error {
-	result := C.rgtp_init()
-	if result != 0 {
-		return fmt.Errorf("failed to initialize RGTP: %d", int(result))
+func rgtpErr(code C.rgtp_error_t) error {
+	if code == C.RGTP_OK {
+		return nil
 	}
-	return nil
+	msg := C.GoString(C.rgtp_strerror(code))
+	return &Error{Code: int(code), Message: msg}
 }
 
-// Cleanup cleans up the RGTP library
+// ── Library lifecycle ────────────────────────────────────────────────────
+
+// Init initialises the RGTP library. Must be called once before any other
+// function. Safe to call multiple times (idempotent).
+func Init() error {
+	return rgtpErr(C.rgtp_init())
+}
+
+// Cleanup releases all global library resources.
 func Cleanup() {
 	C.rgtp_cleanup()
 }
 
-// Version returns the RGTP version
+// Version returns the library version string (e.g. "1.0.0").
 func Version() string {
-	version := C.rgtp_version()
-	return C.GoString(version)
+	return C.GoString(C.rgtp_version())
 }
 
-// CreateConfig creates a new RGTP configuration
-func CreateConfig() *Config {
-	return &Config{
-		ChunkSize:         1024 * 1024, // 1MB default
-		ExposureRate:      1000,        // 1000 chunks/sec default
-		AdaptiveMode:      true,
-		EnableCompression: false,
-		EnableEncryption:  false,
-		Port:              0,     // Auto-select
-		TimeoutMs:         30000, // 30 seconds default
-		UserData:          nil,
-	}
+// ── Socket ───────────────────────────────────────────────────────────────
+
+// Socket wraps an rgtp_socket_t handle.
+type Socket struct {
+	ptr *C.rgtp_socket_t
 }
 
-// CreateSession creates a new RGTP session
-func CreateSession(config *Config) (*Session, error) {
-	if config == nil {
-		return nil, fmt.Errorf("config cannot be nil")
-	}
-
-	cConfig := C.rgtp_config_t{
-		chunk_size:         C.uint32_t(config.ChunkSize),
-		exposure_rate:      C.uint32_t(config.ExposureRate),
-		adaptive_mode:      C.bool(config.AdaptiveMode),
-		enable_compression: C.bool(config.EnableCompression),
-		enable_encryption:  C.bool(config.EnableEncryption),
-		port:               C.uint16_t(config.Port),
-		timeout_ms:         C.int(config.TimeoutMs),
-		user_data:          config.UserData,
-	}
-
-	cSession := C.rgtp_session_create(&cConfig)
-	if cSession == nil {
-		return nil, fmt.Errorf("failed to create session")
-	}
-
-	session := &Session{
-		cSession: cSession,
-		config:   config,
-	}
-
-	return session, nil
-}
-
-// ExposeFile exposes a file through the session
-func (s *Session) ExposeFile(filename string) error {
-	if s.cSession == nil {
-		return fmt.Errorf("invalid session")
-	}
-
-	cFilename := C.CString(filename)
-	defer C.free(unsafe.Pointer(cFilename))
-
-	result := C.rgtp_session_expose_file(s.cSession, cFilename)
-	if result != 0 {
-		return fmt.Errorf("failed to expose file: %d", int(result))
-	}
-
-	return nil
-}
-
-// WaitComplete waits for the session to complete
-func (s *Session) WaitComplete() error {
-	if s.cSession == nil {
-		return fmt.Errorf("invalid session")
-	}
-
-	result := C.rgtp_session_wait_complete(s.cSession)
-	if result != 0 {
-		return fmt.Errorf("session wait failed: %d", int(result))
-	}
-
-	return nil
-}
-
-// GetStats gets session statistics
-func (s *Session) GetStats() (*Stats, error) {
-	if s.cSession == nil {
-		return nil, fmt.Errorf("invalid session")
-	}
-
-	var cStats C.rgtp_stats_t
-	result := C.rgtp_session_get_stats(s.cSession, &cStats)
-	if result != 0 {
-		return nil, fmt.Errorf("failed to get stats: %d", int(result))
-	}
-
-	stats := &Stats{
-		BytesSent:         uint64(cStats.bytes_sent),
-		BytesReceived:     uint64(cStats.bytes_received),
-		ChunksSent:        uint32(cStats.chunks_sent),
-		ChunksReceived:    uint32(cStats.chunks_received),
-		PacketLossRate:    float32(cStats.packet_loss_rate),
-		RttMs:             int(cStats.rtt_ms),
-		PacketsLost:       uint32(cStats.packets_lost),
-		Retransmissions:   uint32(cStats.retransmissions),
-		AvgThroughputMbps: float32(cStats.avg_throughput_mbps),
-		CompletionPercent: float32(cStats.completion_percent),
-		ActiveConnections: uint32(cStats.active_connections),
-	}
-
-	return stats, nil
-}
-
-// Destroy destroys the session
-func (s *Session) Destroy() {
-	if s.cSession != nil {
-		C.rgtp_session_destroy(s.cSession)
-		s.cSession = nil
-	}
-}
-
-// CreateClient creates a new RGTP client
-func CreateClient(config *Config) (*Client, error) {
-	if config == nil {
-		return nil, fmt.Errorf("config cannot be nil")
-	}
-
-	cConfig := C.rgtp_config_t{
-		chunk_size:         C.uint32_t(config.ChunkSize),
-		exposure_rate:      C.uint32_t(config.ExposureRate),
-		adaptive_mode:      C.bool(config.AdaptiveMode),
-		enable_compression: C.bool(config.EnableCompression),
-		enable_encryption:  C.bool(config.EnableEncryption),
-		port:               C.uint16_t(config.Port),
-		timeout_ms:         C.int(config.TimeoutMs),
-		user_data:          config.UserData,
-	}
-
-	cClient := C.rgtp_client_create(&cConfig)
-	if cClient == nil {
-		return nil, fmt.Errorf("failed to create client")
-	}
-
-	client := &Client{
-		cClient: cClient,
-		config:  config,
-	}
-
-	return client, nil
-}
-
-// PullToFile pulls data to a file
-func (c *Client) PullToFile(host string, port uint16, filename string) error {
-	if c.cClient == nil {
-		return fmt.Errorf("invalid client")
-	}
-
-	cHost := C.CString(host)
-	cFilename := C.CString(filename)
-	defer C.free(unsafe.Pointer(cHost))
-	defer C.free(unsafe.Pointer(cFilename))
-
-	result := C.rgtp_client_pull_to_file(c.cClient, cHost, C.uint16_t(port), cFilename)
-	if result != 0 {
-		return fmt.Errorf("failed to pull file: %d", int(result))
-	}
-
-	return nil
-}
-
-// GetClientStats gets client statistics
-func (c *Client) GetStats() (*Stats, error) {
-	if c.cClient == nil {
-		return nil, fmt.Errorf("invalid client")
-	}
-
-	var cStats C.rgtp_stats_t
-	result := C.rgtp_client_get_stats(c.cClient, &cStats)
-	if result != 0 {
-		return nil, fmt.Errorf("failed to get client stats: %d", int(result))
-	}
-
-	stats := &Stats{
-		BytesSent:         uint64(cStats.bytes_sent),
-		BytesReceived:     uint64(cStats.bytes_received),
-		ChunksSent:        uint32(cStats.chunks_sent),
-		ChunksReceived:    uint32(cStats.chunks_received),
-		PacketLossRate:    float32(cStats.packet_loss_rate),
-		RttMs:             int(cStats.rtt_ms),
-		PacketsLost:       uint32(cStats.packets_lost),
-		Retransmissions:   uint32(cStats.retransmissions),
-		AvgThroughputMbps: float32(cStats.avg_throughput_mbps),
-		CompletionPercent: float32(cStats.completion_percent),
-		ActiveConnections: uint32(cStats.active_connections),
-	}
-
-	return stats, nil
-}
-
-// Destroy destroys the client
-func (c *Client) Destroy() {
-	if c.cClient != nil {
-		C.rgtp_client_destroy(c.cClient)
-		c.cClient = nil
-	}
-}
-
-// SendFile convenience function to send a file
-func SendFile(filename string, config *Config) (*Stats, error) {
-	session, err := CreateSession(config)
+// NewSocket creates and binds an RGTP UDP socket.
+func NewSocket() (*Socket, error) {
+	var ptr *C.rgtp_socket_t
+	err := rgtpErr(C.rgtp_socket_create(nil, &ptr))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, err
 	}
-	defer session.Destroy()
-
-	if err := session.ExposeFile(filename); err != nil {
-		return nil, fmt.Errorf("failed to expose file: %w", err)
-	}
-
-	if err := session.WaitComplete(); err != nil {
-		return nil, fmt.Errorf("session failed: %w", err)
-	}
-
-	return session.GetStats()
+	s := &Socket{ptr: ptr}
+	runtime.SetFinalizer(s, (*Socket).Close)
+	return s, nil
 }
 
-// ReceiveFile convenience function to receive a file
-func ReceiveFile(host string, port uint16, filename string, config *Config) (*Stats, error) {
-	client, err := CreateClient(config)
+// Close destroys the socket and releases all associated resources.
+func (s *Socket) Close() {
+	if s.ptr != nil {
+		C.rgtp_socket_destroy(s.ptr)
+		s.ptr = nil
+	}
+}
+
+// ── Surface ──────────────────────────────────────────────────────────────
+
+// Surface wraps an rgtp_surface_t handle (exposer or puller).
+type Surface struct {
+	ptr *C.rgtp_surface_t
+}
+
+// Close destroys the surface and securely zeroizes all key material.
+func (s *Surface) Close() {
+	if s.ptr != nil {
+		C.rgtp_destroy_surface(s.ptr)
+		s.ptr = nil
+	}
+}
+
+// ExposureID returns the 16-byte Exposure_ID for this surface.
+func (s *Surface) ExposureID() ([16]byte, error) {
+	var id [16]byte
+	err := rgtpErr(C.rgtp_get_exposure_id(s.ptr, (*C.uint8_t)(unsafe.Pointer(&id[0]))))
+	return id, err
+}
+
+// Progress returns the transfer completion fraction [0.0, 1.0].
+func (s *Surface) Progress() float32 {
+	return float32(C.rgtp_progress(s.ptr))
+}
+
+// Stats returns transfer statistics for this surface.
+func (s *Surface) Stats() (Stats, error) {
+	var cs C.rgtp_stats_t
+	err := rgtpErr(C.rgtp_get_stats(s.ptr, &cs))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create client: %w", err)
+		return Stats{}, err
 	}
-	defer client.Destroy()
+	return Stats{
+		BytesSent:        uint64(cs.bytes_sent),
+		BytesReceived:    uint64(cs.bytes_received),
+		ChunksSent:       uint32(cs.chunks_sent),
+		ChunksReceived:   uint32(cs.chunks_received),
+		AuthFailures:     uint32(cs.auth_failures),
+		MalformedPackets: uint32(cs.malformed_packets),
+		PacketLossRate:   float32(cs.packet_loss_rate),
+		RTTUs:            uint32(cs.rtt_us),
+	}, nil
+}
 
-	if err := client.PullToFile(host, port, filename); err != nil {
-		return nil, fmt.Errorf("failed to pull file: %w", err)
+// Stats holds per-surface transfer statistics.
+type Stats struct {
+	BytesSent        uint64
+	BytesReceived    uint64
+	ChunksSent       uint32
+	ChunksReceived   uint32
+	AuthFailures     uint32
+	MalformedPackets uint32
+	PacketLossRate   float32
+	RTTUs            uint32
+}
+
+// ── Exposer API ──────────────────────────────────────────────────────────
+
+// Expose pre-encrypts data and creates an immutable Exposure.
+// The returned Surface must be polled to serve pull requests.
+func Expose(ctx context.Context, sock *Socket, data []byte) (*Surface, error) {
+	if len(data) == 0 {
+		return nil, errors.New("data must not be empty")
 	}
 
-	return client.GetStats()
+	var pinner runtime.Pinner
+	pinner.Pin(&data[0])
+	defer pinner.Unpin()
+
+	var ptr *C.rgtp_surface_t
+	err := rgtpErr(C.rgtp_expose(
+		sock.ptr,
+		unsafe.Pointer(&data[0]),
+		C.size_t(len(data)),
+		nil,
+		&ptr,
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Surface{ptr: ptr}
+	runtime.SetFinalizer(s, (*Surface).Close)
+	return s, nil
+}
+
+// Poll serves pending pull requests for an active Exposure.
+// Returns when the context is cancelled or the timeout elapses.
+func Poll(ctx context.Context, surface *Surface, timeoutMs int) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	return rgtpErr(C.rgtp_poll(surface.ptr, C.int(timeoutMs)))
+}
+
+// ── Puller API ───────────────────────────────────────────────────────────
+
+// PullStart begins pulling an Exposure from a remote Exposer.
+func PullStart(ctx context.Context, sock *Socket, server net.Addr,
+	exposureID [16]byte) (*Surface, error) {
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	// Resolve server address to sockaddr_storage
+	udpAddr, ok := server.(*net.UDPAddr)
+	if !ok {
+		return nil, errors.New("server must be a *net.UDPAddr")
+	}
+
+	var ss C.struct_sockaddr_storage
+	if ip4 := udpAddr.IP.To4(); ip4 != nil {
+		sa := (*C.struct_sockaddr_in)(unsafe.Pointer(&ss))
+		sa.sin_family = C.AF_INET
+		sa.sin_port = C.uint16_t(udpAddr.Port<<8 | udpAddr.Port>>8) // htons
+		copy((*[4]byte)(unsafe.Pointer(&sa.sin_addr))[:], ip4)
+	} else {
+		return nil, errors.New("IPv6 not yet implemented in Go binding")
+	}
+
+	var ptr *C.rgtp_surface_t
+	err := rgtpErr(C.rgtp_pull_start(
+		sock.ptr,
+		&ss,
+		(*C.uint8_t)(unsafe.Pointer(&exposureID[0])),
+		nil,
+		&ptr,
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Surface{ptr: ptr}
+	runtime.SetFinalizer(s, (*Surface).Close)
+	return s, nil
+}
+
+// ChunkResult holds the result of a PullNext call.
+type ChunkResult struct {
+	Data       []byte
+	ChunkIndex uint32
+}
+
+// PullNext receives the next available chunk.
+// Returns context.Canceled if ctx is cancelled.
+func PullNext(ctx context.Context, surface *Surface, bufSize int) (ChunkResult, error) {
+	select {
+	case <-ctx.Done():
+		return ChunkResult{}, ctx.Err()
+	default:
+	}
+
+	if bufSize <= 0 {
+		bufSize = 65536
+	}
+
+	buf := make([]byte, bufSize)
+	var received C.size_t
+	var chunkIndex C.uint32_t
+
+	var pinner runtime.Pinner
+	pinner.Pin(&buf[0])
+	defer pinner.Unpin()
+
+	err := rgtpErr(C.rgtp_pull_next(
+		surface.ptr,
+		unsafe.Pointer(&buf[0]),
+		C.size_t(bufSize),
+		&received,
+		&chunkIndex,
+	))
+	if err != nil {
+		return ChunkResult{}, err
+	}
+
+	return ChunkResult{
+		Data:       buf[:int(received)],
+		ChunkIndex: uint32(chunkIndex),
+	}, nil
 }

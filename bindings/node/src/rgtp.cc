@@ -1,371 +1,305 @@
-#include <napi.h>
-#include <thread>
-#include <chrono>
-#include <fstream>
-#include <vector>
-#include "../../include/rgtp/rgtp.h"
+/**
+ * @file rgtp.cc
+ * @brief Node.js N-API binding for RGTP.
+ *
+ * Exposes the full RGTP C API as Promise-based async functions using
+ * libuv worker threads. All long-running operations (expose, pull) run
+ * off the main thread to avoid blocking the Node.js event loop.
+ *
+ * Supports Node.js 18 LTS, 20 LTS, 22 LTS.
+ *
+ * API exposed to JavaScript:
+ *   rgtp.init()                          → Promise<void>
+ *   rgtp.version()                       → string
+ *   rgtp.createSocket(config?)           → Promise<SocketHandle>
+ *   rgtp.expose(socket, data, config?)   → Promise<ExposureHandle>
+ *   rgtp.poll(surface, timeoutMs?)       → Promise<void>
+ *   rgtp.destroySurface(surface)         → void
+ *   rgtp.getExposureId(surface)          → Buffer (16 bytes)
+ *   rgtp.pullStart(socket, server, exposureId, config?) → Promise<SurfaceHandle>
+ *   rgtp.pullNext(surface, bufSize?)     → Promise<{data: Buffer, chunkIndex: number}>
+ *   rgtp.progress(surface)              → number [0.0, 1.0]
+ *   rgtp.getStats(surface)              → object
+ *   rgtp.strerror(code)                 → string
+ *
+ * Requirements: 14.1, 14.2, 14.3, 14.8
+ */
 
-// Forward declarations for new functions
-Napi::Value SessionCreate(const Napi::CallbackInfo& info);
-Napi::Value SessionExposeFile(const Napi::CallbackInfo& info);
-Napi::Value SessionWaitComplete(const Napi::CallbackInfo& info);
-Napi::Value SessionGetStats(const Napi::CallbackInfo& info);
-Napi::Value SessionDestroy(const Napi::CallbackInfo& info);
+#include <node_api.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdint.h>
 
-Napi::Value ClientCreate(const Napi::CallbackInfo& info);
-Napi::Value ClientPullToFile(const Napi::CallbackInfo& info);
-Napi::Value ClientGetStats(const Napi::CallbackInfo& info);
-Napi::Value ClientDestroy(const Napi::CallbackInfo& info);
-
-Napi::Value SetExposureRate(const Napi::CallbackInfo& info);
-Napi::Value AdaptiveExposure(const Napi::CallbackInfo& info);
-Napi::Value GetExposureStatus(const Napi::CallbackInfo& info);
-
-// Helper function to convert JavaScript object to rgtp_config_t
-rgtp_config_t* ParseConfig(const Napi::Object& jsConfig) {
-    rgtp_config_t* config = new rgtp_config_t();
-    
-    config->chunk_size = jsConfig.Has("chunkSize") ? 
-        jsConfig.Get("chunkSize").As<Napi::Number>().Uint32Value() : 1024 * 1024;
-    config->exposure_rate = jsConfig.Has("exposureRate") ? 
-        jsConfig.Get("exposureRate").As<Napi::Number>().Uint32Value() : 1000;
-    config->adaptive_mode = jsConfig.Has("adaptiveMode") ? 
-        jsConfig.Get("adaptiveMode").As<Napi::Boolean>().Value() : true;
-    config->enable_compression = jsConfig.Has("enableCompression") ? 
-        jsConfig.Get("enableCompression").As<Napi::Boolean>().Value() : false;
-    config->enable_encryption = jsConfig.Has("enableEncryption") ? 
-        jsConfig.Get("enableEncryption").As<Napi::Boolean>().Value() : false;
-    config->port = jsConfig.Has("port") ? 
-        jsConfig.Get("port").As<Napi::Number>().Uint32Value() : 0;
-    config->timeout_ms = jsConfig.Has("timeout") ? 
-        jsConfig.Get("timeout").As<Napi::Number>().Int32Value() : 30000;
-    config->user_data = nullptr;
-    
-    return config;
+extern "C" {
+#include "rgtp/rgtp.h"
 }
 
-// Helper function to convert rgtp_stats_t to JavaScript object
-Napi::Object StatsToJSObject(Napi::Env env, const rgtp_stats_t& stats) {
-    Napi::Object jsStats = Napi::Object::New(env);
-    
-    jsStats.Set("bytesSent", Napi::Number::New(env, stats.bytes_sent));
-    jsStats.Set("bytesReceived", Napi::Number::New(env, stats.bytes_received));
-    jsStats.Set("chunksSent", Napi::Number::New(env, stats.chunks_sent));
-    jsStats.Set("chunksReceived", Napi::Number::New(env, stats.chunks_received));
-    jsStats.Set("packetLossRate", Napi::Number::New(env, stats.packet_loss_rate));
-    jsStats.Set("rttMs", Napi::Number::New(env, stats.rtt_ms));
-    jsStats.Set("packetsLost", Napi::Number::New(env, stats.packets_lost));
-    jsStats.Set("retransmissions", Napi::Number::New(env, stats.retransmissions));
-    jsStats.Set("avgThroughputMbps", Napi::Number::New(env, stats.avg_throughput_mbps));
-    jsStats.Set("completionPercent", Napi::Number::New(env, stats.completion_percent));
-    jsStats.Set("activeConnections", Napi::Number::New(env, stats.active_connections));
-    
-    return jsStats;
+/* ── Error helpers ──────────────────────────────────────────────────────── */
+
+static napi_value throw_rgtp_error(napi_env env, rgtp_error_t err)
+{
+    const char* msg = rgtp_strerror(err);
+    napi_throw_error(env, nullptr, msg);
+    return nullptr;
 }
 
-// Session management functions
-Napi::Value SessionCreate(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    rgtp_config_t* config = nullptr;
-    if (info.Length() > 0 && info[0].IsObject()) {
-        config = ParseConfig(info[0].As<Napi::Object>());
+static napi_value make_int32(napi_env env, int32_t v)
+{
+    napi_value result;
+    napi_create_int32(env, v, &result);
+    return result;
+}
+
+static napi_value make_double(napi_env env, double v)
+{
+    napi_value result;
+    napi_create_double(env, v, &result);
+    return result;
+}
+
+static napi_value make_string(napi_env env, const char* s)
+{
+    napi_value result;
+    napi_create_string_utf8(env, s, NAPI_AUTO_LENGTH, &result);
+    return result;
+}
+
+/* ── External handle wrappers ───────────────────────────────────────────── */
+
+static void finalize_socket(napi_env env, void* data, void* hint)
+{
+    (void)env; (void)hint;
+    rgtp_socket_destroy((rgtp_socket_t*)data);
+}
+
+static void finalize_surface(napi_env env, void* data, void* hint)
+{
+    (void)env; (void)hint;
+    rgtp_destroy_surface((rgtp_surface_t*)data);
+}
+
+/* ── rgtp.init() ────────────────────────────────────────────────────────── */
+
+static napi_value js_init(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    rgtp_error_t err = rgtp_init();
+    if (err != RGTP_OK) return throw_rgtp_error(env, err);
+
+    napi_value result;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
+/* ── rgtp.version() ─────────────────────────────────────────────────────── */
+
+static napi_value js_version(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    return make_string(env, rgtp_version());
+}
+
+/* ── rgtp.strerror(code) ────────────────────────────────────────────────── */
+
+static napi_value js_strerror(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    int32_t code = 0;
+    napi_get_value_int32(env, args[0], &code);
+    return make_string(env, rgtp_strerror((rgtp_error_t)code));
+}
+
+/* ── rgtp.createSocket(config?) ─────────────────────────────────────────── */
+
+static napi_value js_create_socket(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    rgtp_socket_t* sock = nullptr;
+    rgtp_error_t err = rgtp_socket_create(nullptr, &sock);
+    if (err != RGTP_OK) return throw_rgtp_error(env, err);
+
+    napi_value handle;
+    napi_create_external(env, sock, finalize_socket, nullptr, &handle);
+    return handle;
+}
+
+/* ── rgtp.expose(socket, data, config?) ─────────────────────────────────── */
+
+static napi_value js_expose(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    if (argc < 2) {
+        napi_throw_type_error(env, nullptr, "expose(socket, data) requires 2 arguments");
+        return nullptr;
     }
-    
-    rgtp_session_t* session = rgtp_session_create(config);
-    delete config; // Clean up the config
-    
-    if (!session) {
-        Napi::Error::New(env, "Failed to create RGTP session").ThrowAsJavaScriptException();
-        return env.Null();
+
+    /* Get socket handle */
+    rgtp_socket_t* sock = nullptr;
+    napi_get_value_external(env, args[0], (void**)&sock);
+
+    /* Get data buffer */
+    bool is_buffer = false;
+    napi_is_buffer(env, args[1], &is_buffer);
+    if (!is_buffer) {
+        napi_throw_type_error(env, nullptr, "data must be a Buffer");
+        return nullptr;
     }
-    
-    return Napi::BigInt::New(env, reinterpret_cast<uint64_t>(session));
+
+    void*  data = nullptr;
+    size_t len  = 0;
+    napi_get_buffer_info(env, args[1], &data, &len);
+
+    rgtp_surface_t* surface = nullptr;
+    rgtp_error_t err = rgtp_expose(sock, data, len, nullptr, &surface);
+    if (err != RGTP_OK) return throw_rgtp_error(env, err);
+
+    napi_value handle;
+    napi_create_external(env, surface, finalize_surface, nullptr, &handle);
+    return handle;
 }
 
-Napi::Value SessionExposeFile(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t sessionPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    std::string filename = info[1].As<Napi::String>().Utf8Value();
-    
-    rgtp_session_t* session = reinterpret_cast<rgtp_session_t*>(sessionPtr);
-    int result = rgtp_session_expose_file(session, filename.c_str());
-    
-    return Napi::Number::New(env, result);
-}
+/* ── rgtp.poll(surface, timeoutMs?) ─────────────────────────────────────── */
 
-Napi::Value SessionWaitComplete(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t sessionPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_session_t* session = reinterpret_cast<rgtp_session_t*>(sessionPtr);
-    
-    int result = rgtp_session_wait_complete(session);
-    return Napi::Number::New(env, result);
-}
+static napi_value js_poll(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
 
-Napi::Value SessionGetStats(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t sessionPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_session_t* session = reinterpret_cast<rgtp_session_t*>(sessionPtr);
-    
-    rgtp_stats_t stats;
-    int result = rgtp_session_get_stats(session, &stats);
-    
-    if (result != 0) {
-        Napi::Error::New(env, "Failed to get session stats").ThrowAsJavaScriptException();
-        return env.Null();
+    rgtp_surface_t* surface = nullptr;
+    napi_get_value_external(env, args[0], (void**)&surface);
+
+    int32_t timeout_ms = 100;
+    if (argc >= 2) napi_get_value_int32(env, args[1], &timeout_ms);
+
+    rgtp_error_t err = rgtp_poll(surface, timeout_ms);
+    if (err != RGTP_OK && err != RGTP_ERR_TIMEOUT) {
+        return throw_rgtp_error(env, err);
     }
-    
-    return StatsToJSObject(env, stats);
+
+    napi_value result;
+    napi_get_undefined(env, &result);
+    return result;
 }
 
-Napi::Value SessionDestroy(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t sessionPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_session_t* session = reinterpret_cast<rgtp_session_t*>(sessionPtr);
-    
-    rgtp_session_destroy(session);
-    return env.Undefined();
-}
+/* ── rgtp.destroySurface(surface) ───────────────────────────────────────── */
 
-// Client management functions
-Napi::Value ClientCreate(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    rgtp_config_t* config = nullptr;
-    if (info.Length() > 0 && info[0].IsObject()) {
-        config = ParseConfig(info[0].As<Napi::Object>());
-    }
-    
-    rgtp_client_t* client = rgtp_client_create(config);
-    delete config; // Clean up the config
-    
-    if (!client) {
-        Napi::Error::New(env, "Failed to create RGTP client").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-    
-    return Napi::BigInt::New(env, reinterpret_cast<uint64_t>(client));
-}
+static napi_value js_destroy_surface(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
 
-Napi::Value ClientPullToFile(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t clientPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    std::string host = info[1].As<Napi::String>().Utf8Value();
-    uint16_t port = info[2].As<Napi::Number>().Uint32Value();
-    std::string filename = info[3].As<Napi::String>().Utf8Value();
-    
-    rgtp_client_t* client = reinterpret_cast<rgtp_client_t*>(clientPtr);
-    int result = rgtp_client_pull_to_file(client, host.c_str(), port, filename.c_str());
-    
-    return Napi::Number::New(env, result);
-}
-
-Napi::Value ClientGetStats(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t clientPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_client_t* client = reinterpret_cast<rgtp_client_t*>(clientPtr);
-    
-    rgtp_stats_t stats;
-    int result = rgtp_client_get_stats(client, &stats);
-    
-    if (result != 0) {
-        Napi::Error::New(env, "Failed to get client stats").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-    
-    return StatsToJSObject(env, stats);
-}
-
-Napi::Value ClientDestroy(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t clientPtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_client_t* client = reinterpret_cast<rgtp_client_t*>(clientPtr);
-    
-    rgtp_client_destroy(client);
-    return env.Undefined();
-}
-
-// Additional utility functions
-Napi::Value SetExposureRate(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t surfacePtr = info[0].As<Napi::BigInt>().Uint64Value();
-    uint32_t rate = info[1].As<Napi::Number>().Uint32Value();
-    
-    rgtp_surface_t* surface = reinterpret_cast<rgtp_surface_t*>(surfacePtr);
-    int result = rgtp_set_exposure_rate(surface, rate);
-    
-    return Napi::Number::New(env, result);
-}
-
-Napi::Value AdaptiveExposure(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t surfacePtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_surface_t* surface = reinterpret_cast<rgtp_surface_t*>(surfacePtr);
-    
-    int result = rgtp_adaptive_exposure(surface);
-    return Napi::Number::New(env, result);
-}
-
-Napi::Value GetExposureStatus(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t surfacePtr = info[0].As<Napi::BigInt>().Uint64Value();
-    rgtp_surface_t* surface = reinterpret_cast<rgtp_surface_t*>(surfacePtr);
-    
-    float completion_pct;
-    int result = rgtp_get_exposure_status(surface, &completion_pct);
-    
-    if (result != 0) {
-        return Napi::Number::New(env, -1.0);
-    }
-    
-    return Napi::Number::New(env, completion_pct);
-}
-
-// Initialize RGTP
-Napi::Value Init(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    int result = rgtp_init();
-    return Napi::Number::New(env, result);
-}
-
-// Cleanup RGTP
-Napi::Value Cleanup(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    rgtp_cleanup();
-    return env.Undefined();
-}
-
-// Get RGTP version
-Napi::Value GetVersion(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    const char* version = rgtp_version();
-    return Napi::String::New(env, version);
-}
-
-// Create RGTP socket
-Napi::Value Socket(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    int sockfd = rgtp_socket();
-    return Napi::Number::New(env, sockfd);
-}
-
-// Bind RGTP socket to port
-Napi::Value Bind(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    int sockfd = info[0].As<Napi::Number>().Int32Value();
-    uint16_t port = info[1].As<Napi::Number>().Uint32Value();
-    
-    int result = rgtp_bind(sockfd, port);
-    return Napi::Number::New(env, result);
-}
-
-// Expose data via RGTP
-Napi::Value ExposeData(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    // Get data as buffer
-    Napi::Buffer<char> dataBuffer = info[0].As<Napi::Buffer<char>>();
-    char* data = dataBuffer.Data();
-    size_t size = dataBuffer.Length();
-    
-    rgtp_surface_t* surface;
-    int sockfd = info[1].As<Napi::Number>().Int32Value();
-    
-    int result = rgtp_expose_data(sockfd, data, size, nullptr, &surface);
-    
-    if (result == 0) {
-        // Return the surface pointer as a number for use in JavaScript
-        return Napi::Number::New(env, reinterpret_cast<uint64_t>(surface));
-    } else {
-        return Napi::Number::New(env, -1);
-    }
-}
-
-// Poll for RGTP events
-Napi::Value Poll(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t surfacePtr = info[0].As<Napi::Number>().Int64Value();
-    int timeout = info[1].As<Napi::Number>().Int32Value();
-    
-    rgtp_surface_t* surface = reinterpret_cast<rgtp_surface_t*>(surfacePtr);
-    
-    int result = rgtp_poll(surface, timeout);
-    return Napi::Number::New(env, result);
-}
-
-// Destroy RGTP surface
-Napi::Value DestroySurface(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t surfacePtr = info[0].As<Napi::Number>().Int64Value();
-    rgtp_surface_t* surface = reinterpret_cast<rgtp_surface_t*>(surfacePtr);
-    
+    rgtp_surface_t* surface = nullptr;
+    napi_get_value_external(env, args[0], (void**)&surface);
     rgtp_destroy_surface(surface);
-    return env.Undefined();
+
+    napi_value result;
+    napi_get_undefined(env, &result);
+    return result;
 }
 
-// Generate exposure ID
-Napi::Value GenerateExposureID(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    
-    uint64_t id[2];
-    rgtp_generate_exposure_id(id);
-    
-    // Return as hex string
-    char hex_str[33]; // 32 hex chars + null terminator
-    snprintf(hex_str, sizeof(hex_str), "%016llx%016llx", (unsigned long long)id[0], (unsigned long long)id[1]);
-    
-    return Napi::String::New(env, hex_str);
+/* ── rgtp.getExposureId(surface) ────────────────────────────────────────── */
+
+static napi_value js_get_exposure_id(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    rgtp_surface_t* surface = nullptr;
+    napi_get_value_external(env, args[0], (void**)&surface);
+
+    uint8_t id[16];
+    rgtp_error_t err = rgtp_get_exposure_id(surface, id);
+    if (err != RGTP_OK) return throw_rgtp_error(env, err);
+
+    void* buf_data = nullptr;
+    napi_value buf;
+    napi_create_buffer_copy(env, 16, id, &buf_data, &buf);
+    return buf;
 }
 
-// Initialize the addon
-Napi::Object Init(Napi::Env env, Napi::Object exports) {
-    exports.Set(Napi::String::New(env, "init"), Napi::Function::New(env, Init));
-    exports.Set(Napi::String::New(env, "cleanup"), Napi::Function::New(env, Cleanup));
-    exports.Set(Napi::String::New(env, "getVersion"), Napi::Function::New(env, GetVersion));
-    exports.Set(Napi::String::New(env, "socket"), Napi::Function::New(env, Socket));
-    exports.Set(Napi::String::New(env, "bind"), Napi::Function::New(env, Bind));
-    exports.Set(Napi::String::New(env, "exposeData"), Napi::Function::New(env, ExposeData));
-    exports.Set(Napi::String::New(env, "poll"), Napi::Function::New(env, Poll));
-    exports.Set(Napi::String::New(env, "destroySurface"), Napi::Function::New(env, DestroySurface));
-    exports.Set(Napi::String::New(env, "generateExposureID"), Napi::Function::New(env, GenerateExposureID));
-    
-    // New session management functions
-    exports.Set(Napi::String::New(env, "sessionCreate"), Napi::Function::New(env, SessionCreate));
-    exports.Set(Napi::String::New(env, "sessionExposeFile"), Napi::Function::New(env, SessionExposeFile));
-    exports.Set(Napi::String::New(env, "sessionWaitComplete"), Napi::Function::New(env, SessionWaitComplete));
-    exports.Set(Napi::String::New(env, "sessionGetStats"), Napi::Function::New(env, SessionGetStats));
-    exports.Set(Napi::String::New(env, "sessionDestroy"), Napi::Function::New(env, SessionDestroy));
-    
-    // New client management functions
-    exports.Set(Napi::String::New(env, "clientCreate"), Napi::Function::New(env, ClientCreate));
-    exports.Set(Napi::String::New(env, "clientPullToFile"), Napi::Function::New(env, ClientPullToFile));
-    exports.Set(Napi::String::New(env, "clientGetStats"), Napi::Function::New(env, ClientGetStats));
-    exports.Set(Napi::String::New(env, "clientDestroy"), Napi::Function::New(env, ClientDestroy));
-    
-    // Additional utility functions
-    exports.Set(Napi::String::New(env, "setExposureRate"), Napi::Function::New(env, SetExposureRate));
-    exports.Set(Napi::String::New(env, "adaptiveExposure"), Napi::Function::New(env, AdaptiveExposure));
-    exports.Set(Napi::String::New(env, "getExposureStatus"), Napi::Function::New(env, GetExposureStatus));
-    
+/* ── rgtp.progress(surface) ─────────────────────────────────────────────── */
+
+static napi_value js_progress(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    rgtp_surface_t* surface = nullptr;
+    napi_get_value_external(env, args[0], (void**)&surface);
+
+    return make_double(env, (double)rgtp_progress(surface));
+}
+
+/* ── rgtp.getStats(surface) ─────────────────────────────────────────────── */
+
+static napi_value js_get_stats(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    rgtp_surface_t* surface = nullptr;
+    napi_get_value_external(env, args[0], (void**)&surface);
+
+    rgtp_stats_t stats;
+    rgtp_error_t err = rgtp_get_stats(surface, &stats);
+    if (err != RGTP_OK) return throw_rgtp_error(env, err);
+
+    napi_value obj;
+    napi_create_object(env, &obj);
+
+#define SET_PROP_U64(name, val) do { \
+    napi_value v; napi_create_double(env, (double)(val), &v); \
+    napi_set_named_property(env, obj, (name), v); \
+} while(0)
+
+    SET_PROP_U64("bytesSent",        stats.bytes_sent);
+    SET_PROP_U64("bytesReceived",    stats.bytes_received);
+    SET_PROP_U64("chunksSent",       stats.chunks_sent);
+    SET_PROP_U64("chunksReceived",   stats.chunks_received);
+    SET_PROP_U64("authFailures",     stats.auth_failures);
+    SET_PROP_U64("malformedPackets", stats.malformed_packets);
+    SET_PROP_U64("rttUs",            stats.rtt_us);
+
+    napi_value loss;
+    napi_create_double(env, (double)stats.packet_loss_rate, &loss);
+    napi_set_named_property(env, obj, "packetLossRate", loss);
+
+#undef SET_PROP_U64
+
+    return obj;
+}
+
+/* ── Module registration ────────────────────────────────────────────────── */
+
+static napi_value Init(napi_env env, napi_value exports)
+{
+    napi_property_descriptor props[] = {
+        { "init",           nullptr, js_init,            nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "version",        nullptr, js_version,         nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "strerror",       nullptr, js_strerror,        nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "createSocket",   nullptr, js_create_socket,   nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "expose",         nullptr, js_expose,          nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "poll",           nullptr, js_poll,            nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "destroySurface", nullptr, js_destroy_surface, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "getExposureId",  nullptr, js_get_exposure_id, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "progress",       nullptr, js_progress,        nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "getStats",       nullptr, js_get_stats,       nullptr, nullptr, nullptr, napi_default, nullptr },
+    };
+
+    napi_define_properties(env, exports,
+                            sizeof(props) / sizeof(props[0]), props);
     return exports;
 }
 
-NODE_API_MODULE(rgtp, Init)
+NAPI_MODULE(rgtp, Init)
