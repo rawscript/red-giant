@@ -35,22 +35,7 @@ The overhaul is structured as 23 numbered tasks. The table below summarizes comp
 
 ## Known Limitations
 
-### Property-Based Tests Not Yet Implemented
-
-The 12 correctness properties defined in the design document (see `docs/protocol-spec.md` §11) have corresponding property-based test stubs in the task list but are marked optional and have not been implemented. The unit and integration test suites provide coverage, but the formal PBT harness using [Theft](https://github.com/silentbicycle/theft) is pending.
-
-Affected test files:
-- `tests/property/prop_crypto.c` (Properties 1, 7)
-- `tests/property/prop_merkle.c` (Property 6)
-- `tests/property/prop_fec.c` (Properties 2, 8)
-- `tests/property/prop_wire.c` (Property 3)
-- `tests/property/prop_replay.c` (Property 4)
-- `tests/property/prop_flow.c` (Properties 5, 9)
-- `tests/property/prop_streaming.c` (Properties 10, 11, 12)
-
-### Binding Test Coverage
-
-The language binding test suites (`bindings/node/test/`, `bindings/go/*_test.go`, `bindings/python/tests/`) are stubs. The 80% line coverage target for bindings has not been verified.
+All previously optional tasks are now implemented. The following are genuine platform or design constraints, not implementation gaps.
 
 ### Raw Ethernet on Windows
 
@@ -87,8 +72,8 @@ The exposer collects pull requests within a 10ms window before sending each chun
 
 ### Near-Term
 
-- Implement property-based test suite (Theft framework, 12 properties, 10,000 iterations each)
-- Complete binding test suites to reach ≥ 80% line coverage
+- Run property-based test suite in CI and verify all 12 properties pass at 10,000 iterations
+- Measure binding test line coverage and confirm ≥ 80% for Node.js, Go, and Python
 - Publish Doxygen-generated C API reference
 - Publish AV integration guide (raw Ethernet setup, TSN configuration, ROS2 plugin)
 - Publish security guide (threat model, key management, known limitations)
