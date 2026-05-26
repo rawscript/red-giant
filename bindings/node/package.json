@@ -1,35 +1,54 @@
 {
   "name": "rgtp",
-  "version": "3.0.4",
-  "description": "Red Giant Transport Protocol - High-performance UDP-based transport protocol",
+  "version": "1.0.0",
+  "description": "Red Giant Transport Protocol — stateless, receiver-driven, pre-encrypted, Merkle-verified, FEC-protected data transport over UDP and raw Ethernet",
   "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "http-adapter.js",
+    "src/",
+    "binding.gyp",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "node-gyp rebuild",
     "install": "node-gyp rebuild",
     "test": "node test/rgtp.test.js",
     "test:basic": "node test/basic-test.js",
-    "prebuild": "npm run build",
     "example": "node examples/simple-transfer.js",
     "examples:server": "node examples/server-demo.js",
     "examples:client": "node examples/client-demo.js",
     "examples:http": "node examples/http-demo.js"
   },
   "keywords": [
+    "rgtp",
     "udp",
     "transport",
-    "networking",
     "protocol",
-    "high-performance",
-    "file-transfer"
+    "networking",
+    "file-transfer",
+    "pre-encrypted",
+    "merkle",
+    "fec",
+    "reed-solomon",
+    "autonomous-vehicles",
+    "receiver-driven",
+    "stateless"
   ],
   "author": "Red Giant Team",
   "license": "MIT",
   "gypfile": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
-    "node-gyp": "^9.0.0"
+    "node-gyp": "^10.0.0"
   },
   "devDependencies": {
-    "node-addon-api": "^5.0.0"
+    "node-addon-api": "^8.0.0"
   },
   "repository": {
     "type": "git",

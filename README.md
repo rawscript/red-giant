@@ -266,15 +266,40 @@ pullSurface.createReadStream().pipe(fs.createWriteStream('output.bin'));
 
 ### Python
 
+```bash
+pip install rgtp
+```
+
 ```python
-import asyncio, rgtp
+import rgtp
 
-async def main():
-    sock = await rgtp.create_socket(port=9000)
-    surface = await rgtp.expose(sock, data, fec_enabled=True)
-    await surface.poll()
+rgtp.init()
 
-asyncio.run(main())
+# Expose
+with rgtp.Socket() as sock:
+    data = open("large-file.bin", "rb").read()
+    with rgtp.expose(sock, data) as surface:
+        print("Exposure ID:", surface.exposure_id().hex())
+        while True:
+            rgtp.poll(surface, timeout_ms=1000)
+
+# Pull
+with rgtp.Socket() as sock:
+    surface = rgtp.pull_start(sock, ("192.168.1.10", 9000), exposure_id)
+    with surface:
+        chunks = {}
+        while surface.progress() < 1.0:
+            data, idx = rgtp.pull_next(surface)
+            chunks[idx] = data
+
+rgtp.cleanup()
+```
+
+CLI tools installed with the package:
+
+```bash
+rgtp-expose large-file.bin --port 9000 --fec
+rgtp-pull 192.168.1.10:9000 <exposure-id-hex> output.bin
 ```
 
 ---
