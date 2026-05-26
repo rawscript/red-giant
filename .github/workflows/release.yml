@@ -3,120 +3,172 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: RGTP ${{ github.ref }}
-        body: |
-          ## Changes in this Release
-          
-          See [CHANGELOG.md](https://github.com/red-giant/rgtp/blob/main/bindings/node/CHANGELOG.md) for detailed changes.
-          
-          ## Installation
-          
-          ```bash
-          npm install rgtp@${{ github.ref_name }}
-          ```
-          
-          ## Quick Start
-          
-          ```javascript
-          const rgtp = require('rgtp');
-          
-          // Expose a file
-          const session = new rgtp.Session({ port: 9999 });
-          await session.exposeFile('myfile.bin');
-          
-          // Pull a file
-          const client = new rgtp.Client();
-          await client.pullToFile('localhost', 9999, 'downloaded.bin');
-          ```
-        draft: false
-        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
-
-  build-binaries:
-    name: Build Binary for ${{ matrix.os }}
+  # ── Build release artifacts for all platforms ─────────────────────────
+  build-release:
+    name: Release ${{ matrix.os }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    needs: create-release
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux-x64
-            artifact_name: rgtp-linux-x64
-          - os: windows-latest
-            target: win32-x64
-            artifact_name: rgtp-win32-x64
-          - os: macos-latest
-            target: darwin-x64
-            artifact_name: rgtp-darwin-x64
+          - os: ubuntu-22.04
+            arch: x86_64
+            artifact: librgtp-linux-x86_64
+          - os: ubuntu-22.04
+            arch: aarch64
+            artifact: librgtp-linux-aarch64
+            cross: true
+            toolchain: cmake/toolchains/aarch64-linux-gnu.cmake
+          - os: macos-14
+            arch: arm64
+            artifact: librgtp-macos-arm64
+          - os: windows-2022
+            arch: x86_64
+            artifact: librgtp-windows-x86_64
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        shell: bash
 
-    - name: Install system dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential python3-dev cmake
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build libsodium-dev \
+            gcc-aarch64-linux-gnu || true
 
-    - name: Install system dependencies (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install cmake || true
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: brew install cmake ninja libsodium
 
-    - name: Setup Visual Studio (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: |
+          cmake -B build-release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRGTP_CRYPTO_BACKEND=libsodium \
+            -DRGTP_ENABLE_FEC=ON \
+            -DRGTP_ENABLE_SIMD=ON \
+            -DRGTP_BUILD_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX=install \
+            ${{ matrix.cross && format('-DCMAKE_TOOLCHAIN_FILE={0}', matrix.toolchain) || '' }}
+        shell: bash
 
-    - name: Install dependencies and build
-      working-directory: bindings/node
-      run: |
-        npm ci
-        npm run build
-      continue-on-error: true
+      - name: Build
+        run: cmake --build build-release --parallel
 
-    - name: Package binary
-      working-directory: bindings/node
-      run: |
-        mkdir -p dist
-        if [ -d "build/Release" ]; then
-          tar -czf dist/${{ matrix.artifact_name }}.tar.gz -C build/Release .
-        else
-          echo "No binary built" > dist/${{ matrix.artifact_name }}.txt
-        fi
-      shell: bash
+      - name: Install
+        run: cmake --install build-release
 
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: bindings/node/dist/${{ matrix.artifact_name }}.tar.gz
-        asset_name: ${{ matrix.artifact_name }}.tar.gz
-        asset_content_type: application/gzip
-      continue-on-error: true
+      - name: Package
+        run: |
+          cd install
+          tar czf ../${{ matrix.artifact }}-${{ steps.version.outputs.VERSION }}.tar.gz .
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}-*.tar.gz
+
+  # ── Create GitHub Release ─────────────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # ── Publish Node.js binding to npm ───────────────────────────────────
+  publish-npm:
+    name: Publish npm
+    needs: create-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install and build
+        working-directory: bindings/node
+        run: |
+          npm install
+          npm run build
+
+      - name: Publish
+        working-directory: bindings/node
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── Publish Python binding to PyPI ───────────────────────────────────
+  publish-pypi:
+    name: Publish PyPI
+    needs: create-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build wheel
+        working-directory: bindings/python
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish
+        working-directory: bindings/python
+        run: |
+          pip install twine
+          twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+  # ── Generate SBOM ─────────────────────────────────────────────────────
+  sbom:
+    name: Generate SBOM
+    needs: create-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: rgtp-sbom.spdx.json
+
+      - name: Upload SBOM to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rgtp-sbom.spdx.json
