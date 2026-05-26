@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node-gyp rebuild",
     "install": "node-gyp rebuild",
-    "test": "node test/test.js",
+    "test": "node test/rgtp.test.js",
+    "test:basic": "node test/basic-test.js",
     "prebuild": "npm run build",
     "example": "node examples/simple-transfer.js",
     "examples:server": "node examples/server-demo.js",
