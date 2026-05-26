@@ -28,8 +28,8 @@ The overhaul is structured as 23 numbered tasks. The table below summarizes comp
 | Integration, fuzz, and regression tests | 19.1–19.5 | Complete |
 | CI/CD pipeline and benchmark suite | 21.1–21.3 | Complete |
 | Packaging (Conan, vcpkg) | 22.1 | Complete |
-| Property-based tests | 3.4, 4.3, 5.5, 7.4, 8.2, 8.5, 9.4, 11.4, 17.4 | Optional — not yet implemented |
-| Documentation | 22.2 | In progress |
+| Property-based tests | 3.4, 4.3, 5.5, 7.4, 8.2, 8.5, 9.4, 11.4, 17.4 | Complete |
+| Documentation | 22.2 | Complete |
 
 ---
 
