@@ -236,7 +236,7 @@ rgtp_cleanup();
 ### Go
 
 ```go
-import "github.com/your-org/rgtp/bindings/go"
+import "github.com/rawscript/rgtp/bindings/go"
 
 rgtp.Init()
 sock, _ := rgtp.NewSocket()
