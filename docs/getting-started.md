@@ -1,227 +1,322 @@
 # Getting Started with RGTP
 
-This guide will help you get up and running with RGTP Node.js bindings quickly.
+This guide covers building the library from source, the core C API, and basic usage examples in C, Go, Node.js, and Python.
 
-## Installation
+---
 
-### Quick Install
+## Prerequisites
+
+| Dependency | Version | Notes |
+|------------|---------|-------|
+| CMake | 3.20+ | Build system |
+| C compiler | GCC 11+, Clang 14+, or MSVC 19.30+ | C17 mode |
+| libsodium | 1.0.18+ | Default crypto backend |
+| OpenSSL | 3.0+ | Alternative crypto backend |
+
+Optional:
+- `cppcheck` and `clang-tidy` for static analysis targets
+- `io_uring` support requires Linux kernel 5.1+
+- Raw Ethernet mode requires Linux `AF_PACKET` or WinPcap/Npcap on Windows
+- Node.js 18 LTS, 20 LTS, or 22 LTS for the Node.js binding
+- Go 1.21+ for the Go binding
+- Python 3.9+ for the Python binding
+
+---
+
+## Building from Source
+
+### Configure
 
 ```bash
-npm install rgtp
+cmake -B build \
+  -DRGTP_CRYPTO_BACKEND=libsodium \   # or: openssl
+  -DRGTP_ENABLE_FEC=ON \
+  -DRGTP_ENABLE_RAW_ETHERNET=OFF \
+  -DRGTP_ENABLE_IOURING=OFF \
+  -DRGTP_ENABLE_SIMD=ON \
+  -DRGTP_BUILD_TESTS=ON \
+  -DRGTP_BUILD_EXAMPLES=ON \
+  -DRGTP_BUILD_BINDINGS=OFF
 ```
 
-### Prerequisites
+### Build
 
-- Node.js 14.0.0 or higher
-- npm 6.0.0 or higher
-- Build tools (automatically handled)
+```bash
+cmake --build build --parallel
+```
 
-The package includes pre-built binaries for all major platforms.
+### Test
 
-## Basic Usage
+```bash
+ctest --test-dir build --output-on-failure
+```
 
-### Exposing a File (Server Side)
+### Install
+
+```bash
+cmake --install build --prefix /usr/local
+```
+
+This installs headers under `include/rgtp/`, libraries under `lib/`, and a `rgtp-config.cmake` package file for downstream `find_package(rgtp)` usage.
+
+### Cross-Compilation (ARM)
+
+```bash
+# aarch64
+cmake -B build-arm64 \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-linux-gnu.cmake \
+  -DRGTP_CRYPTO_BACKEND=libsodium
+
+# armv7 hard-float
+cmake -B build-armhf \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-linux-gnueabihf.cmake \
+  -DRGTP_CRYPTO_BACKEND=libsodium
+```
+
+### Static Analysis
+
+```bash
+cmake --build build --target analyze
+```
+
+---
+
+## CMake Options Reference
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `RGTP_CRYPTO_BACKEND` | `libsodium` | Crypto backend: `libsodium` or `openssl` |
+| `RGTP_ENABLE_FEC` | `OFF` | Enable Reed-Solomon FEC subsystem |
+| `RGTP_ENABLE_RAW_ETHERNET` | `OFF` | Enable `AF_PACKET` raw Ethernet mode |
+| `RGTP_ENABLE_IOURING` | `OFF` | Enable io_uring I/O backend (Linux 5.1+) |
+| `RGTP_ENABLE_SIMD` | `ON` | Enable SSE4.2/AVX2/NEON acceleration |
+| `RGTP_BUILD_TESTS` | `OFF` | Build and register tests with CTest |
+| `RGTP_BUILD_EXAMPLES` | `OFF` | Build example programs |
+| `RGTP_BUILD_BINDINGS` | `OFF` | Build language bindings |
+| `RGTP_MEMORY_PROFILE` | `FULL` | Memory profile: `FULL`, `EMBEDDED`, or `MINIMAL` |
+
+---
+
+## C API — Quick Reference
+
+All public symbols are declared in `include/rgtp/rgtp.h`. The library uses opaque handle types; callers never embed or `sizeof` internal structs.
+
+### Library Lifecycle
+
+```c
+#include <rgtp/rgtp.h>
+
+// Initialize once at program startup (calls sodium_init / WSAStartup)
+rgtp_error_t err = rgtp_init();
+if (err != RGTP_OK) {
+    fprintf(stderr, "rgtp_init: %s\n", rgtp_strerror(err));
+    return 1;
+}
+
+// ... use the library ...
+
+rgtp_cleanup();
+```
+
+### Exposing Data (Server Side)
+
+```c
+#include <rgtp/rgtp.h>
+
+// 1. Create a socket
+rgtp_config_t cfg = {
+    .chunk_size   = 0,          // auto (1200 bytes for UDP)
+    .window_size  = 64,
+    .fec_enabled  = true,
+    .fec_k        = 223,
+    .fec_n        = 255,
+    .merkle_proofs = true,
+    .port         = 9000,
+    .timeout_ms   = -1,         // block indefinitely in rgtp_poll
+};
+
+rgtp_socket_t *sock = NULL;
+rgtp_error_t err = rgtp_socket_create(&cfg, &sock);
+if (err != RGTP_OK) { /* handle */ }
+
+// 2. Expose data — pre-encrypts all chunks and builds the Merkle tree
+const uint8_t *data = /* your data */;
+size_t data_size    = /* size in bytes */;
+
+rgtp_surface_t *surface = NULL;
+err = rgtp_expose(sock, data, data_size, &cfg, &surface);
+if (err != RGTP_OK) { /* handle */ }
+
+// Print the exposure ID so pullers can connect
+uint8_t id[16];
+rgtp_get_exposure_id(surface, id);
+// distribute `id` and the encryption key out-of-band to pullers
+
+// 3. Serve pull requests until done
+while (/* running */) {
+    err = rgtp_poll(surface, 1000 /* ms */);
+    if (err != RGTP_OK && err != RGTP_ERR_TIMEOUT) { /* handle */ }
+}
+
+// 4. Tear down — zeroizes key material before freeing
+rgtp_destroy_surface(surface);
+rgtp_socket_destroy(sock);
+```
+
+### Pulling Data (Client Side)
+
+```c
+#include <rgtp/rgtp.h>
+#include <string.h>
+
+// 1. Create a socket
+rgtp_config_t cfg = {
+    .window_size  = 64,
+    .timeout_ms   = 30000,
+};
+
+rgtp_socket_t *sock = NULL;
+rgtp_socket_create(&cfg, &sock);
+
+// 2. Start a pull — sends Pull_Request, receives Manifest
+struct sockaddr_storage server = /* fill in exposer address */;
+uint8_t exposure_id[16]        = /* received out-of-band */;
+
+rgtp_surface_t *surface = NULL;
+rgtp_error_t err = rgtp_pull_start(sock, &server, exposure_id, &cfg, &surface);
+if (err != RGTP_OK) { /* handle */ }
+
+// 3. Receive chunks as they arrive
+uint8_t buf[65536];
+size_t received;
+uint32_t chunk_index;
+
+while (rgtp_progress(surface) < 1.0f) {
+    err = rgtp_pull_next(surface, buf, sizeof(buf), &received, &chunk_index);
+    if (err == RGTP_OK) {
+        // process buf[0..received-1] for chunk_index
+    } else if (err == RGTP_ERR_TIMEOUT) {
+        continue;
+    } else {
+        fprintf(stderr, "pull_next: %s\n", rgtp_strerror(err));
+        break;
+    }
+}
+
+// 4. Tear down
+rgtp_destroy_surface(surface);
+rgtp_socket_destroy(sock);
+```
+
+### Error Handling
+
+Every function that can fail returns `rgtp_error_t`. Use `rgtp_strerror()` for human-readable messages:
+
+```c
+rgtp_error_t err = rgtp_expose(sock, data, size, &cfg, &surface);
+if (err != RGTP_OK) {
+    fprintf(stderr, "expose failed: %s\n", rgtp_strerror(err));
+}
+```
+
+---
+
+## Go Binding
+
+```go
+import "github.com/your-org/rgtp/bindings/go"
+
+ctx := context.Background()
+
+// Expose
+surface, err := rgtp.Expose(ctx, sock, data, &rgtp.Config{
+    FECEnabled: true,
+    FEC_K:      223,
+    FEC_N:      255,
+})
+if err != nil { log.Fatal(err) }
+defer surface.Destroy()
+
+// Pull
+surface, err = rgtp.PullStart(ctx, sock, serverAddr, exposureID, &rgtp.Config{})
+if err != nil { log.Fatal(err) }
+defer surface.Destroy()
+
+for surface.Progress() < 1.0 {
+    chunk, index, err := surface.PullNext(ctx)
+    if err != nil { log.Fatal(err) }
+    _ = chunk  // process chunk data for index
+}
+```
+
+All blocking operations respect `context.Context` cancellation.
+
+---
+
+## Node.js Binding
 
 ```javascript
 const rgtp = require('rgtp');
 
-async function exposeFile() {
-  const session = new rgtp.Session({
-    port: 9999,
-    adaptiveMode: true
-  });
+// Expose
+const sock = await rgtp.createSocket({ port: 9000 });
+const surface = await rgtp.expose(sock, buffer, {
+    fecEnabled: true,
+    fecK: 223,
+    fecN: 255,
+    merkleProofs: true,
+});
 
-  // Event listeners
-  session.on('exposeStart', (filePath, fileSize) => {
-    console.log(`Exposing ${filePath} (${fileSize} bytes)`);
-  });
+// Serve pull requests
+await surface.poll();
 
-  session.on('progress', (transferred, total) => {
-    const percent = ((transferred / total) * 100).toFixed(1);
-    console.log(`Progress: ${percent}%`);
-  });
-
-  session.on('error', (error) => {
-    console.error('Session error:', error.message);
-  });
-
-  try {
-    await session.exposeFile('my-large-file.bin');
-    console.log('File exposed successfully!');
-    
-    // Wait for transfers to complete
-    await session.waitComplete();
-    
-    // Get final statistics
-    const stats = await session.getStats();
-    console.log(`Transferred: ${rgtp.formatBytes(stats.bytesTransferred)}`);
-    console.log(`Throughput: ${stats.avgThroughputMbps.toFixed(2)} MB/s`);
-  } finally {
-    session.close();
-  }
-}
-
-exposeFile().catch(console.error);
-```
-
-### Pulling a File (Client Side)
-
-```javascript
-const rgtp = require('rgtp');
-
-async function pullFile() {
-  const client = new rgtp.Client({
-    timeout: 30000
-  });
-
-  try {
-    await client.pullToFile('192.168.1.100', 9999, 'downloaded-file.bin');
-    console.log('File downloaded successfully!');
-    
-    const stats = await client.getStats();
-    console.log(`Downloaded: ${rgtp.formatBytes(stats.bytesTransferred)}`);
-    console.log(`Speed: ${stats.avgThroughputMbps.toFixed(2)} MB/s`);
-  } finally {
-    client.close();
-  }
-}
-
-pullFile().catch(console.error);
-```
-
-## Configuration Options
-
-### Session Configuration
-
-```javascript
-const session = new rgtp.Session({
-  port: 9999,              // Port to listen on (0 = auto)
-  chunkSize: 256 * 1024,   // Chunk size in bytes (0 = auto)
-  exposureRate: 1000,      // Initial exposure rate (chunks/sec)
-  adaptiveMode: true,      // Enable adaptive rate control
-  timeout: 30000,          // Operation timeout (ms)
-  
-  // Event callbacks
-  onProgress: (transferred, total) => {
-    console.log(`Progress: ${(transferred/total*100).toFixed(1)}%`);
-  },
-  
-  onError: (code, message) => {
-    console.error(`Error ${code}: ${message}`);
-  }
+// Pull (streaming)
+const pullSurface = await rgtp.pullStart(sock, serverAddr, exposureId, {});
+const stream = pullSurface.createReadStream();
+stream.pipe(fs.createWriteStream('output.bin'));
+await new Promise((resolve, reject) => {
+    stream.on('end', resolve);
+    stream.on('error', reject);
 });
 ```
 
-> **Note**: The JavaScript bindings currently provide simplified abstractions over the core C API. For full control over transport layer features, use the C API directly.
+All long-running operations return Promises. The pull API is compatible with the Node.js `Readable` stream interface.
 
-### Client Configuration
+---
 
-```javascript
-const client = new rgtp.Client({
-  chunkSize: 256 * 1024,   // Preferred chunk size
-  adaptiveMode: true,      // Enable adaptive mode
-  timeout: 30000,          // Connection timeout (ms)
-  
-  // Event callbacks
-  onProgress: (transferred, total) => {
-    const percent = (transferred / total * 100).toFixed(1);
-    console.log(`Downloaded: ${percent}%`);
-  }
-});
+## Python Binding
+
+```python
+import asyncio
+import rgtp
+
+async def main():
+    sock = await rgtp.create_socket(port=9000)
+
+    # Expose
+    surface = await rgtp.expose(sock, data, fec_enabled=True, fec_k=223, fec_n=255)
+    await surface.poll()
+
+    # Pull
+    pull_surface = await rgtp.pull_start(sock, server_addr, exposure_id)
+    async for chunk_index, chunk_data in pull_surface:
+        process(chunk_index, chunk_data)
+
+asyncio.run(main())
 ```
 
-## Network-Optimized Configurations
+---
 
-RGTP provides pre-configured settings for different network conditions:
+## Configuration Tips
 
-```javascript
-// High-bandwidth LAN
-const lanConfig = rgtp.createLANConfig();
-const session = new rgtp.Session(lanConfig);
+**Chunk size** — smaller chunks reduce latency but increase per-packet overhead. For in-vehicle Ethernet use 256–512 bytes; for WAN file transfer use 1200 bytes (UDP default).
 
-// Variable bandwidth WAN
-const wanConfig = rgtp.createWANConfig();
-const client = new rgtp.Client(wanConfig);
+**FEC** — enable for lossy links (WiFi, 5G). Start with `fec_k=223, fec_n=255` (~14% overhead). The library adapts the parity ratio automatically based on reported loss rate.
 
-// Mobile/limited bandwidth
-const mobileConfig = rgtp.createMobileConfig();
-const session = new rgtp.Session(mobileConfig);
-```
+**Merkle proofs** — enable when integrity verification per chunk is required. Adds `log2(chunk_count) × 32` bytes per chunk packet.
 
-## Event-Driven Programming
+**io_uring** — set `RGTP_ENABLE_IOURING=ON` on Linux 5.1+ for lowest CPU overhead at high packet rates.
 
-RGTP classes extend EventEmitter for reactive programming:
+**SIMD** — enabled by default. Disable with `RGTP_ENABLE_SIMD=OFF` only for debugging or on platforms without SSE4.2/AVX2/NEON.
 
-```javascript
-const session = new rgtp.Session({ port: 9999 });
-
-session.on('progress', (transferred, total) => {
-  updateProgressBar(transferred / total);
-});
-
-session.on('error', (error) => {
-  console.error('Transfer error:', error.message);
-  // Handle error (retry, notify user, etc.)
-});
-
-session.on('close', () => {
-  console.log('Session closed');
-});
-
-await session.exposeFile('large-file.bin');
-```
-
-## Error Handling
-
-Always wrap RGTP operations in try-catch blocks:
-
-```javascript
-try {
-  const client = new rgtp.Client({ timeout: 10000 });
-  await client.pullToFile('remote-host', 9999, 'output.bin');
-} catch (error) {
-  if (error.message.includes('timeout')) {
-    console.log('Connection timed out - server may be unreachable');
-  } else if (error.message.includes('not found')) {
-    console.log('File not found on server');
-  } else {
-    console.log('Transfer failed:', error.message);
-  }
-}
-```
-
-## Convenience Functions
-
-For simple use cases, use the convenience functions:
-
-```javascript
-// Send a file (creates session, exposes, waits for completion)
-const sendStats = await rgtp.sendFile('my-file.bin', { port: 9999 });
-
-// Receive a file (creates client, pulls file)
-const receiveStats = await rgtp.receiveFile('host', 9999, 'output.bin');
-```
-
-## Next Steps
-
-- Check out the [Examples](examples/README.md) for more complex use cases
-- Read the [API Reference](api-reference.md) for detailed documentation
-- See the [Performance Guide](performance-guide.md) for optimization tips
-- Run the included examples:
-  ```bash
-  npm run example              # Simple transfer
-  npm run examples:server      # Interactive server
-  npm run examples:client      # Batch downloader
-  npm run examples:http        # HTTP/Web3 adapter demo
-  ```
-
-## Troubleshooting
-
-If you encounter issues:
-
-1. **Native module build fails**: Ensure you have the required build tools installed
-2. **Connection timeouts**: Check firewall settings and network connectivity
-3. **Poor performance**: Try different chunk sizes or enable adaptive mode
-4. **Memory issues**: Monitor memory usage with large files
-
-See [Troubleshooting](troubleshooting.md) for detailed solutions.
+**Embedded profile** — set `RGTP_MEMORY_PROFILE=EMBEDDED` to replace all heap allocations with arena allocations. Maximum exposure size is 16 MB and maximum chunk count is 16384 in this mode.
