@@ -1,70 +1,111 @@
-# Contributing to Red Giant Transport Protocol (RGTP)
+# Contributing to RGTP
 
-Thank you for your interest in contributing to RGTP! We welcome contributions from everyone.
+Thank you for your interest in contributing to the Red Giant Transport Protocol. All contributions are welcome — bug fixes, performance improvements, documentation, new examples, and language bindings.
 
 ## Code of Conduct
 
-Please follow our Code of Conduct to keep our community welcoming and respectful.
-
-## Getting Started
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests if applicable
-5. Run the test suite (`npm test` or `make test`)
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
+Please read and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development Setup
 
 ### Prerequisites
-- C compiler (GCC, Clang, or MSVC)
-- Node.js (for JavaScript bindings)
-- Go (for Go bindings)
-- Python (for build tools)
 
-### Building from Source
+- CMake 3.20+
+- GCC 11+, Clang 14+, or MSVC 19.30+ (C17 mode)
+- libsodium 1.0.18+ (default) or OpenSSL 3.0+
+- Go 1.21+ (for Go binding)
+- Node.js 18 LTS, 20 LTS, or 22 LTS (for Node.js binding)
+- Python 3.9+ (for Python binding)
+
+### Build and Test
+
 ```bash
-git clone https://github.com/redgiant/red-giant.git
+git clone https://github.com/rawscript/red-giant.git
 cd red-giant
-make
+
+# Configure with tests and FEC enabled
+cmake -B build \
+  -DRGTP_CRYPTO_BACKEND=libsodium \
+  -DRGTP_ENABLE_FEC=ON \
+  -DRGTP_BUILD_TESTS=ON \
+  -DRGTP_BUILD_EXAMPLES=ON
+
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-### Running Tests
+### Static Analysis
+
 ```bash
-npm test  # For Node.js bindings
-make test # For C library
+cmake --build build --target analyze
 ```
 
-## What to Contribute
+### Binding Tests
 
-- Bug fixes (especially in the core C library)
-- Performance improvements
-- Documentation improvements
-- Language bindings for other languages
-- Examples and tutorials
-- Security enhancements
+```bash
+# Node.js
+cd bindings/node && npm test
 
-## Pull Request Process
+# Go
+cd bindings/go && go test ./...
 
-1. Ensure your PR addresses an existing issue or describes a clear problem
-2. Include tests for new functionality
-3. Update documentation as needed
-4. Your PR will be reviewed and merged if it meets quality standards
+# Python
+cd bindings/python && python -m pytest tests/ -v
+```
+
+## Workflow
+
+1. Fork the repository and create a feature branch:
+   ```bash
+   git checkout -b feature/your-feature
+   ```
+
+2. Make your changes. All C code must be C17 and compile cleanly under `-Wall -Wextra -Wpedantic` with zero warnings.
+
+3. Add or update tests. New features require unit tests in `tests/unit/`. Bug fixes require a regression test in `tests/regression/`.
+
+4. Run the full test suite and confirm it passes:
+   ```bash
+   ctest --test-dir build --output-on-failure
+   ```
+
+5. Run sanitizers:
+   ```bash
+   cmake -B build-asan \
+     -DCMAKE_C_FLAGS="-fsanitize=address,undefined" \
+     -DRGTP_BUILD_TESTS=ON -DRGTP_ENABLE_FEC=ON
+   cmake --build build-asan --parallel
+   ctest --test-dir build-asan --output-on-failure
+   ```
+
+6. Commit and push:
+   ```bash
+   git commit -m "feat: describe your change"
+   git push origin feature/your-feature
+   ```
+
+7. Open a Pull Request. PRs are reviewed within 2 business days.
 
 ## Code Style
 
-- Follow existing code style in the project
-- Use descriptive variable and function names
-- Include comments for complex logic
-- Keep functions reasonably small and focused
+- **C17** throughout. No compiler extensions (`-std=c17`, not `-std=gnu17`).
+- All public API functions return `rgtp_error_t`. No `void` functions that can fail.
+- All heap allocations must check for `NULL` and return `RGTP_ERR_NOMEM` on failure.
+- No `strcpy`, `sprintf`, or `gets`. Use `strncpy`, `snprintf`, `strnlen`.
+- No signed integer overflow in size or index arithmetic. Use `uint32_t`/`uint64_t` with explicit overflow guards.
+- Key material must be zeroized with `rgtp_zeroize()` before `free`.
+- Global mutable state must be protected by `pthread_once` or `InitOnceExecuteOnce`.
+- New source files must include a Doxygen `@file` comment and `@brief` description.
 
-## Questions?
+## What to Contribute
 
-Feel free to open an issue if you have questions about contributing.
+- **Bug fixes** — check the issue tracker for open bugs. All fixes need a regression test.
+- **Performance** — benchmarks are in `tests/bench/`. Profile before and after.
+- **Documentation** — docs live in `docs/`. Architecture diagrams use Mermaid.
+- **Language bindings** — new bindings go in `bindings/<language>/`. Follow the existing Node.js, Go, and Python patterns.
+- **Examples** — C examples go in `examples/c/`. Keep them self-contained.
+- **Platform support** — new toolchain files go in `cmake/toolchains/`.
 
----
+## Questions
 
-Every contribution matters. Thank you for helping build the future of transport protocols!
+Open a GitHub Discussion or email [jasemwaura@gmail.com](mailto:jasemwaura@gmail.com).
