@@ -101,7 +101,7 @@ file(GLOB_RECURSE RGTP_HEADERS "include/*.h")
 
 # ──────────────────────────────────────────────────────────────────[...]
 # Library targets
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 add_library(rgtp_shared SHARED ${RGTP_SOURCES})
 add_library(rgtp_static STATIC ${RGTP_SOURCES})
 
@@ -136,17 +136,17 @@ if(WIN32)
     target_link_libraries(rgtp_static PRIVATE ws2_32 iphlpapi)
 endif()
 
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 # Version information
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 set_target_properties(rgtp_shared PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
 )
 
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 # Tests
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 if(RGTP_BUILD_TESTS)
     enable_testing()
     
@@ -181,9 +181,9 @@ if(RGTP_BUILD_TESTS)
     endforeach()
 endif()
 
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 # Examples
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 if(RGTP_BUILD_EXAMPLES)
     file(GLOB EXAMPLE_SOURCES "examples/c/*.c")
     foreach(example_file ${EXAMPLE_SOURCES})
@@ -199,16 +199,16 @@ endif()
 
 # ──────────────────────────────────────────────────────────────────[...]
 # Static analysis target
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 add_custom_target(analyze
     COMMAND cppcheck --enable=all --std=c99 ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include || true
     COMMAND clang-tidy-14 ${RGTP_SOURCES} -- -I${CMAKE_CURRENT_SOURCE_DIR}/include || true
     COMMENT "Running static analysis tools..."
 )
 
-# ─────────────────────────────────────────────────────────────────[...]
+# ─────────────────────────────────────────��────────────────────────[...]
 # Installation
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 include(GNUInstallDirs)
 
 # Install libraries
@@ -224,11 +224,11 @@ install(DIRECTORY include/
     FILES_MATCHING PATTERN "*.h"
 )
 
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 # Print configuration summary
-# ─────────────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 message(STATUS "")
-message(STATUS "═══ RGTP Build Configuration ═══════════════════════════════")
+message(STATUS "=== RGTP Build Configuration ===")
 message(STATUS "  Version:           ${PROJECT_VERSION}")
 message(STATUS "  Build Type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Compiler:          ${CMAKE_C_COMPILER}")
@@ -237,5 +237,5 @@ message(STATUS "  Enable FEC:        ${RGTP_ENABLE_FEC}")
 message(STATUS "  Enable SIMD:       ${RGTP_ENABLE_SIMD}")
 message(STATUS "  Build Tests:       ${RGTP_BUILD_TESTS}")
 message(STATUS "  Build Examples:    ${RGTP_BUILD_EXAMPLES}")
-message(STATUS "═══════════════════════════════════════════════════════════──[...]
+message(STATUS "===================================")
 message(STATUS "")
