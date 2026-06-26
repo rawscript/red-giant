@@ -73,7 +73,16 @@ if(RGTP_ENABLE_SIMD)
     add_compile_definitions(RGTP_ENABLE_SIMD)
 endif()
 
+#
+──────────────────────────────────────────────────────────────────[...]
+# CCSDS adaptor 
 # ──────────────────────────────────────────────────────────────────[...]
+option(RGTP_TRANSPORT_CCSDS "Build with CCSDS Space Packet transport" OFF)
+
+if(RGTP_TRANSPORT_CCSDS)
+  target_sources(rgtp PRIVATE src/io/transport_ccsds.c)
+  target_compile_definitions(rgtp PRIVATE RGTP_HAVE_CCSDS=1)
+endif() ──────────────────────────────────────────────────────────────────[...]
 # Crypto backend detection
 # ──────────────────────────────────────────────────────────────────[...]
 if(RGTP_CRYPTO_BACKEND STREQUAL "libsodium")
@@ -206,7 +215,7 @@ add_custom_target(analyze
     COMMENT "Running static analysis tools..."
 )
 
-# ─────────────────────────────────────────��────────────────────────[...]
+# ─────────────────────────────────────────────────────────────────[...]
 # Installation
 # ──────────────────────────────────────────────────────────────────[...]
 include(GNUInstallDirs)
