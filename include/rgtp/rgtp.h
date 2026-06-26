@@ -264,6 +264,11 @@ void          rgtp_socket_destroy(rgtp_socket_t* sock);
 /* ═══════════════════════════════════════════════════════════════════════════
  * Exposer API
  * ═══════════════════════════════════════════════════════════════════════════ */
+/* Create a socket that uses native CCSDS Space Packets on the given
+ * device (e.g., "/dev/spw0", "/dev/ttyS0").
+ * The address parameters in pull/expose functions are ignored. */
+rgtp_socket_t *rgtp_socket_create_ccsds(const char *device,
+                                        const rgtp_config_t *cfg);
 
 /**
  * @brief Pre-encrypt data and create an immutable Exposure.
