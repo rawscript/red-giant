@@ -93,7 +93,7 @@ jobs:
             cmake_extra: -DCMAKE_C_FLAGS="/fsanitize=address"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
@@ -156,7 +156,7 @@ jobs:
             qemu: qemu-arm-static
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install cross-toolchain
         run: |
@@ -187,7 +187,7 @@ jobs:
         target: [fuzz_parser, fuzz_merkle_verifier, fuzz_fec_decoder, fuzz_pull_handler]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install
         run: |
@@ -222,7 +222,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install
         run: |
