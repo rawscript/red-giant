@@ -55,6 +55,14 @@
 #define RGTP_LOG_INFO  2
 #define RGTP_LOG_DEBUG 3
 
+/* ── Satellite mode constants ────────────────────────────────────────────── */
+#define RGTP_SPACE_LINK_NONE      0u   /**< No space link (default) */
+#define RGTP_SPACE_LINK_UHF       1u   /**< UHF band (300 MHz - 3 GHz) */
+#define RGTP_SPACE_LINK_SBAND     2u   /**< S-band (2-4 GHz) */
+#define RGTP_SPACE_LINK_XBAND     3u   /**< X-band (8-12 GHz) */
+#define RGTP_SPACE_LINK_KABAND    4u   /**< Ka-band (26-40 GHz) */
+#define RGTP_SPACE_LINK_OPTICAL   5u   /**< Optical (laser) communications */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -148,6 +156,31 @@ typedef struct rgtp_config {
 
     /* Memory */
     uint32_t         memory_profile;   /**< RGTP_MEM_FULL / RGTP_MEM_EMBEDDED / RGTP_MEM_MINIMAL */
+
+    /* Satellite communications (optional) */
+    bool             satellite_mode;   /**< Enable satellite-specific optimizations */
+    uint32_t         max_rtt_ms;       /**< Maximum round-trip time in milliseconds (for space links) */
+    float            link_asymmetry;   /**< Downlink/uplink bandwidth ratio (e.g., 10.0 = 10x faster downlink) */
+    bool             store_and_forward;/**< Enable store-and-forward for intermittent connectivity */
+    uint8_t          space_link_type;  /**< RGTP_SPACE_LINK_* constants */
+    
+    /* CCSDS/space protocol options */
+    bool             ccsds_tm;         /**< Enable CCSDS Telemetry (TM) protocol */
+    bool             ccsds_tc;         /**< Enable CCSDS Telecommand (TC) protocol */
+    bool             ccsds_aos;        /**< Enable CCSDS Advanced Orbiting Systems (AOS) */
+    bool             ccsds_cfdp;       /**< Enable CCSDS File Delivery Protocol (CFDP) */
+    uint16_t         apid;             /**< CCSDS Application Process ID (APID) */
+    uint8_t          spacecraft_id;    /**< Spacecraft identifier (0-255) */
+
+    /* Ground station information */
+    char             ground_station[32]; /**< Ground station identifier */
+    uint32_t         contact_window_start; /**< UTC timestamp of contact start */
+    uint32_t         contact_window_end;   /**< UTC timestamp of contact end */
+
+    /* Link quality parameters */
+    float            min_snr_db;       /**< Minimum acceptable SNR in dB */
+    float            max_ber;          /**< Maximum acceptable bit error rate */
+    uint32_t         doppler_shift_hz; /**< Expected Doppler shift in Hz */
 
     /* Custom allocator (NULL = use global allocator set via rgtp_set_allocator) */
     rgtp_allocator_t allocator;
