@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #endif
 
-// Internal structure for the proxy
+
 struct rgtp_http3_proxy {
     rgtp_http3_proxy_config_t config;
     int running;
