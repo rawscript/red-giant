@@ -5,7 +5,7 @@
 [![CMake 3.20+](https://img.shields.io/badge/build-CMake%203.20%2B-green)](#building)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20ARM-lightgrey)](#platform-support)
 
-RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verified, FEC-protected data transport protocol operating over UDP and raw Ethernet. It is designed for two primary environments: general-purpose high-bandwidth file distribution and deterministic low-latency autonomous vehicle (AV) in-vehicle networks.
+RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verified, FEC-protected data transport protocol operating over UDP and raw Ethernet. It is designed for two primary environments: general-purpose high-bandwidth file distribution and deterministic low-latency autonomous vehicle (AV) in-vehicle networks with provision for CCSDS support.
 
 ---
 
