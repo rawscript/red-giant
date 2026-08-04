@@ -215,6 +215,37 @@ typedef struct rgtp_latency_stats {
     uint32_t sample_count;         /**< Number of delay samples in window */
 } rgtp_latency_stats_t;
 
+/** @brief Satellite-specific link statistics. */
+typedef struct rgtp_satellite_stats {
+    /* Link quality metrics */
+    float snr_db;                  /**< Current signal-to-noise ratio in dB */
+    float ber;                     /**< Current bit error rate */
+    float link_margin_db;          /**< Link margin in dB */
+    int32_t doppler_offset_hz;     /**< Measured Doppler offset in Hz */
+    
+    /* Contact window statistics */
+    uint32_t contact_attempts;     /**< Number of contact attempts */
+    uint32_t successful_contacts;  /**< Number of successful contacts */
+    uint32_t contact_duration_s;   /**< Duration of last successful contact in seconds */
+    uint32_t time_to_contact_s;    /**< Time until next contact window in seconds */
+    
+    /* Store-and-forward statistics */
+    uint64_t stored_bytes;         /**< Bytes in store-and-forward buffer */
+    uint32_t stored_chunks;        /**< Chunks in store-and-forward buffer */
+    uint32_t store_overflow_count; /**< Number of store overflow events */
+    
+    /* Spacecraft status */
+    uint8_t spacecraft_health;     /**< Spacecraft health indicator (0-100) */
+    uint8_t power_level;           /**< Available power percentage (0-100) */
+    uint8_t antenna_status;        /**< Antenna status (0=down, 1=pointing, 2=tracking) */
+    
+    /* CCSDS protocol statistics */
+    uint32_t ccsds_frames_sent;    /**< CCSDS frames transmitted */
+    uint32_t ccsds_frames_received;/**< CCSDS frames received */
+    uint32_t ccsds_frame_errors;   /**< CCSDS frame errors detected */
+    uint32_t ccsds_vcdu_count;     /**< CCSDS Virtual Channel Data Units */
+} rgtp_satellite_stats_t;
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Structured logging
  * ═══════════════════════════════════════════════════════════════════════════ */
