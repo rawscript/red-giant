@@ -94,6 +94,7 @@ typedef enum rgtp_error {
     RGTP_ERR_RATE_LIMITED    = -13, /**< Pull request rate limit exceeded */
     RGTP_ERR_NOT_SUPPORTED   = -14, /**< Feature not available on this platform/build */
     RGTP_ERR_INTERNAL        = -15, /**< Internal invariant violation */
+    RGTP_ERR_SATELLITE_NO_CONTACT = -16, /**< No active satellite contact window */
 } rgtp_error_t;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -484,6 +485,150 @@ void  rgtp_set_log_callback(rgtp_log_fn fn, void* ctx);
  * @param level  One of RGTP_LOG_ERROR, RGTP_LOG_WARN, RGTP_LOG_INFO, RGTP_LOG_DEBUG.
  */
 void  rgtp_set_log_level(int level);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Satellite Communications API
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @brief Retrieve satellite-specific link statistics.
+ *
+ * @param surface  Any surface (exposer or puller) configured for satellite mode.
+ * @param out      Pointer to an rgtp_satellite_stats_t to populate.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_get_satellite_stats(const rgtp_surface_t* surface,
+                                      rgtp_satellite_stats_t* out);
+
+/**
+ * @brief Schedule a contact window with a ground station.
+ *
+ * @param surface  A surface configured for satellite communications.
+ * @param start_time  UTC timestamp of contact start (seconds since epoch).
+ * @param end_time    UTC timestamp of contact end (seconds since epoch).
+ * @param ground_station  Ground station identifier string.
+ * @return RGTP_OK, RGTP_ERR_SATELLITE_NO_CONTACT, or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_schedule_contact(rgtp_surface_t* surface,
+                                   uint64_t start_time,
+                                   uint64_t end_time,
+                                   const char* ground_station);
+
+/**
+ * @brief Update link parameters for adaptive coding and modulation.
+ *
+ * @param surface     A surface configured for satellite communications.
+ * @param snr_db      Current signal-to-noise ratio in dB.
+ * @param ber         Current bit error rate.
+ * @param doppler_hz  Measured Doppler shift in Hz.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_update_link_parameters(rgtp_surface_t* surface,
+                                         float snr_db,
+                                         float ber,
+                                         int32_t doppler_hz);
+
+/**
+ * @brief Enable store-and-forward mode for intermittent connectivity.
+ *
+ * @param surface     A surface configured for satellite communications.
+ * @param max_storage_bytes  Maximum storage for store-and-forward (0 = unlimited).
+ * @param max_storage_time_s Maximum storage time in seconds.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_enable_store_forward(rgtp_surface_t* surface,
+                                       uint64_t max_storage_bytes,
+                                       uint32_t max_storage_time_s);
+
+typedef struct rgtp_contact_window {
+    uint64_t start_time;
+    uint64_t end_time;
+    char ground_station[32];
+} rgtp_contact_window_t;
+
+/**
+ * @brief Get available contact windows for a spacecraft.
+ *
+ * @param surface       A surface configured for satellite communications.
+ * @param windows       Array to receive contact window information.
+ * @param max_windows   Maximum number of windows that can be stored.
+ * @param out_count     Receives the actual number of contact windows.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_get_contact_windows(const rgtp_surface_t* surface,
+                                      rgtp_contact_window_t* windows,
+                                      size_t max_windows,
+                                      size_t* out_count);
+
+/**
+ * @brief Configure CCSDS protocol options.
+ *
+ * @param surface     A surface configured for satellite communications.
+ * @param enable_tm   Enable CCSDS Telemetry (TM) protocol.
+ * @param enable_tc   Enable CCSDS Telecommand (TC) protocol.
+ * @param enable_aos  Enable CCSDS Advanced Orbiting Systems (AOS).
+ * @param enable_cfdp Enable CCSDS File Delivery Protocol (CFDP).
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_configure_ccsds(rgtp_surface_t* surface,
+                                  bool enable_tm,
+                                  bool enable_tc,
+                                  bool enable_aos,
+                                  bool enable_cfdp);
+
+/**
+ * @brief Send an emergency telecommand to a spacecraft.
+ *
+ * @param surface     A surface configured for satellite communications.
+ * @param tc_data     Telecommand data payload.
+ * @param tc_size     Size of telecommand data.
+ * @param priority    Priority level (0=lowest, 255=highest).
+ * @return RGTP_OK, RGTP_ERR_SATELLITE_NO_CONTACT, or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_send_emergency_tc(rgtp_surface_t* surface,
+                                    const void* tc_data,
+                                    size_t tc_size,
+                                    uint8_t priority);
+
+/**
+ * @brief Calculate link budget for current configuration.
+ *
+ * @param surface       A surface configured for satellite communications.
+ * @param out_margin_db Receives the calculated link margin in dB.
+ * @param out_ebno_db   Receives the calculated Eb/No in dB.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_calculate_link_budget(const rgtp_surface_t* surface,
+                                        float* out_margin_db,
+                                        float* out_ebno_db);
+
+/**
+ * @brief Configure Doppler shift compensation.
+ *
+ * @param surface           A surface configured for satellite communications.
+ * @param enable_compensation Enable Doppler compensation.
+ * @param max_doppler_hz    Maximum expected Doppler shift in Hz.
+ * @param update_rate_hz    Doppler update rate in Hz.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_configure_doppler(rgtp_surface_t* surface,
+                                    bool enable_compensation,
+                                    uint32_t max_doppler_hz,
+                                    float update_rate_hz);
+
+/**
+ * @brief Check if current time is within a contact window.
+ *
+ * @param surface  A surface configured for satellite communications.
+ * @param out_in_contact  Receives true if within contact window.
+ * @param out_time_to_contact_s  Receives seconds until next contact.
+ * @param out_time_left_s  Receives seconds remaining in current contact.
+ * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
+ */
+rgtp_error_t rgtp_check_contact_status(const rgtp_surface_t* surface,
+                                       bool* out_in_contact,
+                                       uint32_t* out_time_to_contact_s,
+                                       uint32_t* out_time_left_s);
 
 #ifdef __cplusplus
 } /* extern "C" */

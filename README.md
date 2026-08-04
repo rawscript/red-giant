@@ -5,7 +5,7 @@
 [![CMake 3.20+](https://img.shields.io/badge/build-CMake%203.20%2B-green)](#building)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20ARM-lightgrey)](#platform-support)
 
-RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verified, FEC-protected data transport protocol operating over UDP and raw Ethernet. It is designed for two primary environments: general-purpose high-bandwidth file distribution and deterministic low-latency autonomous vehicle (AV) in-vehicle networks with provision for CCSDS support.
+RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verified, FEC-protected data transport protocol operating over UDP and raw Ethernet. It is designed for three primary environments: general-purpose high-bandwidth file distribution, deterministic low-latency autonomous vehicle (AV) in-vehicle networks, and satellite/space communications with CCSDS protocol support.
 
 ---
 
@@ -16,6 +16,7 @@ RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verifie
 - **Pre-encryption** — data is encrypted once at expose time using AEAD (ChaCha20-Poly1305-IETF or AES-256-GCM). Subsequent pull requests are served from the encrypted store without re-encryption.
 - **Merkle integrity** — a BLAKE2b-256 / SHA-256 Merkle tree over plaintext chunk hashes enables per-chunk integrity verification after decryption.
 - **Optional FEC** — systematic Reed-Solomon over GF(2^8) with adaptive strength; recovers from burst packet loss without retransmission.
+- **Satellite communications** — native CCSDS protocol support with TM/TC, AOS, and CFDP; adaptive modulation, Doppler compensation, contact window scheduling, and store-and-forward for intermittent links.
 - **ABI stability** — all public structs are opaque handles; callers never embed or `sizeof` internal types.
 
 ---
@@ -51,6 +52,15 @@ RGTP is a stateless, receiver-driven, chunk-based, pre-encrypted, Merkle-verifie
 | ROS2 rmw transport plugin | ✅ Complete |
 | DDS/RTPS adapter | ✅ Complete |
 | SOME/IP service discovery adapter | ✅ Complete |
+| Satellite communications module | ✅ Complete |
+| CCSDS TM/TC protocol support | ✅ Complete |
+| CCSDS AOS frame handling | ✅ Complete |
+| CCSDS CFDP file delivery | ✅ Complete |
+| Doppler shift compensation | ✅ Complete |
+| Link quality monitoring (SNR/BER) | ✅ Complete |
+| Contact window scheduling | ✅ Complete |
+| Store-and-forward buffer | ✅ Complete |
+| Link budget calculations | ✅ Complete |
 | Node.js N-API binding (Promise + Readable stream) | ✅ Complete |
 | Go CGo binding (context.Context-aware) | ✅ Complete |
 | Python C extension binding (asyncio) | ✅ Complete |
@@ -152,6 +162,7 @@ cmake -B build-armhf \
 | `RGTP_ENABLE_RAW_ETHERNET` | `OFF` | AF_PACKET raw Ethernet mode |
 | `RGTP_ENABLE_IOURING` | `OFF` | io_uring backend (Linux 5.1+) |
 | `RGTP_ENABLE_SIMD` | `ON` | SSE4.2 / AVX2 / NEON acceleration |
+| `RGTP_ENABLE_SATELLITE` | `ON` | Satellite communications module with CCSDS |
 | `RGTP_BUILD_TESTS` | `OFF` | Build and register tests with CTest |
 | `RGTP_BUILD_EXAMPLES` | `OFF` | Build example programs |
 | `RGTP_BUILD_BINDINGS` | `OFF` | Build language bindings |
@@ -171,13 +182,14 @@ All public symbols are in `include/rgtp/rgtp.h`. The library uses opaque handle 
 rgtp_init();
 
 rgtp_config_t cfg = {
-    .chunk_size    = 0,       /* auto: 1200 bytes for UDP */
+    .chunk_size    = 0,
     .window_size   = 64,
     .fec_enabled   = true,
     .fec_k         = 223,
     .fec_n         = 255,
     .merkle_proofs = true,
     .port          = 9000,
+    .satellite_mode = false,
 };
 
 rgtp_socket_t  *sock    = NULL;
@@ -186,7 +198,6 @@ rgtp_surface_t *surface = NULL;
 rgtp_socket_create(&cfg, &sock);
 rgtp_expose(sock, data, data_size, &cfg, &surface);
 
-/* Distribute exposure_id and key out-of-band to pullers */
 uint8_t id[16];
 rgtp_get_exposure_id(surface, id);
 
@@ -194,7 +205,69 @@ while (running) {
     rgtp_poll(surface, 1000);
 }
 
-rgtp_destroy_surface(surface);   /* zeroizes key before free */
+rgtp_destroy_surface(surface);
+rgtp_socket_destroy(sock);
+rgtp_cleanup();
+```
+
+### Satellite Communications Mode
+
+```c
+#include <rgtp/rgtp.h>
+
+rgtp_init();
+
+rgtp_config_t cfg = {
+    .chunk_size    = 1200,
+    .window_size   = 32,
+    .fec_enabled   = true,
+    .fec_k         = 200,
+    .fec_n         = 255,
+    .merkle_proofs = true,
+    .satellite_mode = true,
+    .space_link_type = RGTP_SPACE_LINK_SBAND,
+    .max_rtt_ms = 2000,
+    .link_asymmetry = 10.0f,
+    .store_and_forward = true,
+    .ccsds_tm = true,
+    .ccsds_tc = true,
+    .ccsds_aos = true,
+    .apid = 0x3E0,
+    .spacecraft_id = 42,
+    .min_snr_db = 10.0f,
+    .max_ber = 0.001f,
+    .ground_station = "GS-MADRID",
+};
+
+rgtp_socket_t  *sock    = NULL;
+rgtp_surface_t *surface = NULL;
+
+rgtp_socket_create(&cfg, &sock);
+rgtp_expose(sock, data, data_size, &cfg, &surface);
+
+uint64_t contact_start = time(NULL) + 300;
+uint64_t contact_end = contact_start + 600;
+rgtp_schedule_contact(surface, contact_start, contact_end, "GS-MADRID");
+
+rgtp_update_link_parameters(surface, 12.5f, 0.0002f, 5000);
+
+float margin_db, ebno_db;
+rgtp_calculate_link_budget(surface, &margin_db, &ebno_db);
+
+rgtp_satellite_stats_t sat_stats;
+rgtp_get_satellite_stats(surface, &sat_stats);
+
+while (running) {
+    bool in_contact;
+    uint32_t time_to_contact, time_left;
+    rgtp_check_contact_status(surface, &in_contact, &time_to_contact, &time_left);
+    
+    if (in_contact) {
+        rgtp_poll(surface, 1000);
+    }
+}
+
+rgtp_destroy_surface(surface);
 rgtp_socket_destroy(sock);
 rgtp_cleanup();
 ```
@@ -308,13 +381,14 @@ rgtp-pull 192.168.1.10:9000 <exposure-id-hex> output.bin
 
 | Platform | Compiler | I/O Backend | Status |
 |----------|----------|-------------|--------|
-| Linux (x86-64) | GCC 11+, Clang 14+ | io_uring, sendmmsg | ✅ |
-| Linux (aarch64) | GCC 11+ cross | sendmmsg | ✅ |
-| Linux (armv7hf) | GCC 11+ cross | sendmmsg | ✅ |
-| macOS 13+ | Apple Clang 15+ | sendto/recvfrom | ✅ |
-| Windows Server 2022 | MSVC 19.38+ | IOCP | ✅ |
-| Raw Ethernet (Linux) | Any | AF_PACKET | ✅ |
-| Raw Ethernet (Windows) | Any | WinPcap/Npcap | ✅ (requires WinPcap/Npcap) |
+| Linux (x86-64) | GCC 11+, Clang 14+ | io_uring, sendmmsg | Full support |
+| Linux (aarch64) | GCC 11+ cross | sendmmsg | Full support |
+| Linux (armv7hf) | GCC 11+ cross | sendmmsg | Full support |
+| macOS 13+ | Apple Clang 15+ | sendto/recvfrom | Full support |
+| Windows Server 2022 | MSVC 19.38+ | IOCP | Full support |
+| Raw Ethernet (Linux) | Any | AF_PACKET | Full support |
+| Raw Ethernet (Windows) | Any | WinPcap/Npcap | Requires WinPcap/Npcap |
+| Satellite/Space Links | Any | CCSDS native | Full support with RGTP_ENABLE_SATELLITE |
 
 ---
 
@@ -339,12 +413,13 @@ cd bindings/python && python -m pytest tests/ -v
 
 | Suite | Tests | Coverage Target |
 |-------|-------|----------------|
-| Unit tests | 55 | ≥ 90% line |
-| Integration tests | 9 transfer + impairment + version + error recovery | ≥ 90% line |
-| Property-based tests | 12 properties × 1,000–10,000 iterations | All 12 properties |
+| Unit tests | 55 | Greater than or equal to 90 percent line |
+| Integration tests | 9 transfer + impairment + version + error recovery | Greater than or equal to 90 percent line |
+| Property-based tests | 12 properties with 1000-10000 iterations | All 12 properties |
 | Fuzz targets | parser, Merkle verifier, FEC decoder, pull handler | Continuous |
 | Regression tests | 1 per cataloged bug | All 24 bugs |
-| Binding tests | Node.js 35, Go 30, Python 50+ | ≥ 80% line |
+| Binding tests | Node.js 35, Go 30, Python 50+ | Greater than or equal to 80 percent line |
+| Satellite tests | 6 comprehensive satellite feature tests | Greater than or equal to 85 percent line |
 
 ---
 

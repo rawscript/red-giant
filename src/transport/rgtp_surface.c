@@ -14,6 +14,7 @@
 #include "rgtp_surface_internal.h"
 #include "../core/rgtp_alloc_internal.h"
 #include "../crypto/rgtp_crypto_internal.h"
+#include "../satellite/rgtp_satellite_internal.h"
 
 #include <string.h>
 #include <stdatomic.h>
@@ -71,6 +72,14 @@ void rgtp_destroy_surface(rgtp_surface_t* surface)
 
     /* Zeroize key material FIRST, before freeing any memory */
     rgtp_zeroize(surface->key, sizeof(surface->key));
+    
+    /* Destroy satellite context if present */
+    if (surface->sat_context) {
+        rgtp_satellite_context_t* sat_ctx = (rgtp_satellite_context_t*)surface->sat_context;
+        rgtp_satellite_destroy(sat_ctx);
+        surface_free_ptr(surface, surface->sat_context);
+        surface->sat_context = NULL;
+    }
 
     /* Free exposer chunk store */
     if (surface->chunks) {
@@ -266,6 +275,20 @@ rgtp_surface_t* rgtp_surface_alloc_exposer(const rgtp_config_t* cfg,
     /* Initialise rate limiter and flow control */
     rgtp_ratelimit_init(&s->ratelimit);
     rgtp_flow_init(&s->flow, cfg ? cfg->window_size : 64u);
+    
+    /* Initialize satellite context if satellite mode enabled */
+    if (cfg && cfg->satellite_mode) {
+        rgtp_satellite_context_t* sat_ctx = (rgtp_satellite_context_t*)surface_malloc(s, sizeof(rgtp_satellite_context_t));
+        if (!sat_ctx) goto fail;
+        
+        rgtp_error_t sat_err = rgtp_satellite_init(sat_ctx, cfg);
+        if (sat_err != RGTP_OK) {
+            surface_free_ptr(s, sat_ctx);
+            goto fail;
+        }
+        
+        s->sat_context = sat_ctx;
+    }
 
     return s;
 
@@ -309,6 +332,20 @@ rgtp_surface_t* rgtp_surface_alloc_puller(const rgtp_config_t* cfg,
     /* Initialise anti-replay window and flow control */
     rgtp_replay_window_init(&s->replay);
     rgtp_flow_init(&s->flow, cfg ? cfg->window_size : 64u);
+    
+    /* Initialize satellite context if satellite mode enabled */
+    if (cfg && cfg->satellite_mode) {
+        rgtp_satellite_context_t* sat_ctx = (rgtp_satellite_context_t*)surface_malloc(s, sizeof(rgtp_satellite_context_t));
+        if (!sat_ctx) goto fail;
+        
+        rgtp_error_t sat_err = rgtp_satellite_init(sat_ctx, cfg);
+        if (sat_err != RGTP_OK) {
+            surface_free_ptr(s, sat_ctx);
+            goto fail;
+        }
+        
+        s->sat_context = sat_ctx;
+    }
 
     return s;
 

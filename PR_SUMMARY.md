@@ -1,10 +1,10 @@
 # Packaging Automation - PR Summary
 
-## 🎯 Overview
+##  Overview
 
 This PR adds a **complete, production-ready packaging automation system** that automatically builds, signs, and publishes librgtp to Debian/Ubuntu package managers when tests pass successfully.
 
-## ✨ Key Features
+##  Key Features
 
 ### Automated Release Pipeline
 - **Trigger**: Git tag or manual workflow dispatch
@@ -26,7 +26,7 @@ This PR adds a **complete, production-ready packaging automation system** that a
 - **librgtp-dev** - Headers and static library (development)
 - **librgtp-doc** - Documentation (optional)
 
-## 📦 Files Added
+##  Files Added
 
 ### Workflows (3 files)
 ```
@@ -67,7 +67,7 @@ debian/
 ├── Dockerfile                       # Multi-stage containerized build
 ```
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### 1. Run Setup (5 minutes)
 ```bash
@@ -96,7 +96,7 @@ GitHub Actions automatically:
 - Creates GitHub release
 - Publishes to APT repository
 
-## 🔐 Required GitHub Secrets
+##  Required GitHub Secrets
 
 The `setup-packaging.sh` script will help you generate these:
 
@@ -111,7 +111,7 @@ The `setup-packaging.sh` script will help you generate these:
 
 APT repository secrets are optional - packages will still be published to GitHub releases.
 
-## 📊 What Gets Built
+##  What Gets Built
 
 Per release:
 
@@ -151,7 +151,7 @@ gh secret list
 gh run list --workflow package-release.yml
 ```
 
-## 🔧 Integration with Existing CI
+##  Integration with Existing CI
 
 The system integrates seamlessly:
 
@@ -160,7 +160,7 @@ The system integrates seamlessly:
 3. **Backward compatible** - Old releases still work
 4. **Optional** - Can be disabled by not pushing tags
 
-## 📚 Documentation
+##  Documentation
 
 ### For Users
 - **QUICKSTART_PACKAGING.md** - 5-minute setup guide
@@ -174,7 +174,7 @@ The system integrates seamlessly:
 - **setup-packaging.yml** - Interactive guide
 - **Script comments** - Detailed explanations
 
-## 🔄 Workflow Stages
+##  Workflow Stages
 
 ```
 Push Tag (v1.0.0)
@@ -197,7 +197,7 @@ GitHub Actions
         └─ Publish to APT Repository
 ```
 
-## 🛡️ Security Features
+##  Security Features
 
 - ✅ GPG package signing
 - ✅ SSH key authentication for uploads
@@ -205,7 +205,7 @@ GitHub Actions
 - ✅ HTTPS for all uploads
 - ✅ Secrets stored securely in GitHub
 
-## 🐳 Docker Support
+##  Docker Support
 
 Build in containers without local setup:
 
@@ -214,7 +214,7 @@ docker build -t librgtp:latest .
 docker run -it librgtp:latest
 ```
 
-## 🎓 Example Usage
+##  Example Usage
 
 ### Create a release:
 ```bash
@@ -236,7 +236,7 @@ sudo apt-get update
 sudo apt-get install librgtp librgtp-dev
 ```
 
-## 📋 Checklist Before Merging
+##  Checklist Before Merging
 
 - [ ] All documentation files included
 - [ ] All scripts have execute permissions
@@ -244,7 +244,7 @@ sudo apt-get install librgtp librgtp-dev
 - [ ] CMakeLists.txt exists (merged in previous PR)
 - [ ] Scripts tested locally
 
-## 🔄 After Merging
+##  After Merging
 
 1. **Merge** this PR to main
 2. **Run** `./scripts/setup-packaging.sh` locally
@@ -252,7 +252,7 @@ sudo apt-get install librgtp librgtp-dev
 4. **Test** with a release tag: `git tag -s v1.0.0`
 5. **Verify** packages in GitHub releases
 
-## 🚨 Troubleshooting
+##  Troubleshooting
 
 ### Build fails locally?
 ```bash
@@ -273,7 +273,7 @@ ssh -i ~/.ssh/apt_key user@host "ls /var/www/apt"
 
 See **PACKAGING.md** for detailed troubleshooting.
 
-## 📊 Stats
+##  Stats
 
 - **Total Lines**: 1200+ documentation
 - **Scripts**: 6 files, 600+ lines
@@ -283,7 +283,7 @@ See **PACKAGING.md** for detailed troubleshooting.
 - **Setup Time**: 5 minutes
 - **Release Time**: Automated (5-10 minutes)
 
-## 🎉 Result
+##  Result
 
 After this PR and setup:
 
@@ -294,7 +294,7 @@ After this PR and setup:
 ✅ **Well documented** - 1200+ lines of guides  
 ✅ **Production ready** - Tested, secure, scalable  
 
-## 🤝 How to Test
+##  How to Test
 
 ### Local Test (before merging):
 ```bash

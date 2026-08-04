@@ -2,7 +2,7 @@
 
 This comprehensive guide documents the complete packaging automation system for librgtp.
 
-## 🎯 What's Included
+##  What's Included
 
 ### 1. Debian Package Structure
 - **debian/control.in** - Package metadata template with librgtp, librgtp-dev, librgtp-doc packages
@@ -97,7 +97,7 @@ Quick reference guide:
 - Release workflow
 - Version management
 
-## 🔄 Complete Workflow
+## Complete Workflow
 
 ```
 Code Commit
@@ -129,7 +129,7 @@ GitHub Actions CI (tests)
         └─ Update repository metadata
 ```
 
-## 📊 Features
+##  Features
 
 ### Multi-Distribution Support
 - ✅ Ubuntu 20.04 (Focal)
@@ -159,7 +159,7 @@ GitHub Actions CI (tests)
 - ✅ Semantic versioning
 - ✅ Automated release notes
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Run Setup Wizard
 ```bash
@@ -179,7 +179,7 @@ git push origin v1.0.0
 - ✅ APT repository updated
 - ✅ Release notes generated
 
-## 🔐 Security Setup
+##  Security Setup
 
 ### Generate GPG Key
 ```bash
@@ -203,7 +203,7 @@ gh secret set APT_REPO_PATH -b"/var/www/apt"
 gh secret set APT_REPO_SSH_KEY -b"<BASE64_SSH_KEY>"
 ```
 
-## 📦 Distribution Options
+##  Distribution Options
 
 ### Option 1: APT Repository (Recommended)
 - Self-hosted APT server
@@ -226,7 +226,7 @@ snapcraft remote-build
 snapcraft upload *.snap
 ```
 
-## 📋 Package Contents
+## Package Contents
 
 ### librgtp
 - Shared library: librgtp.so.1
@@ -243,7 +243,7 @@ snapcraft upload *.snap
 sudo apt-get install librgtp librgtp-dev
 ```
 
-## 🔧 Advanced Usage
+##  Advanced Usage
 
 ### Manual Build
 ```bash
@@ -271,7 +271,7 @@ mkdir -p /var/www/apt/{conf,dists,pool}
 reprepro -b /var/www/apt includedeb focal librgtp_*.deb
 ```
 
-## 📊 Build Statistics
+##  Build Statistics
 
 ### Compilation Targets
 - **Distributions**: 3 (focal, jammy, noble)
@@ -299,7 +299,7 @@ A successful release should include:
 - ✅ APT repository updated
 - ✅ Installation verified on target systems
 
-## 🆘 Troubleshooting
+##  Troubleshooting
 
 ### Build Fails
 ```bash
@@ -320,7 +320,7 @@ gpg --test-import-secret-key
 ssh -i ~/.ssh/apt_key user@host "ls /var/www/apt"
 ```
 
-## 📚 Documentation Files
+##  Documentation Files
 
 1. **PACKAGING.md** (400+ lines)
    - Complete reference guide
@@ -336,14 +336,14 @@ ssh -i ~/.ssh/apt_key user@host "ls /var/www/apt"
    - Interactive setup guide
    - Secret generation help
 
-## 🎓 Learning Resources
+##  Learning Resources
 
 - [Debian Packaging Guide](https://www.debian.org/doc/manuals/maint-guide/)
 - [CMake Documentation](https://cmake.org/documentation/)
 - [GitHub Actions](https://github.com/features/actions)
 - [GPG Key Management](https://wiki.debian.org/SecureApt)
 
-## 🔄 Future Enhancements
+##  Future Enhancements
 
 Possible additions:
 - [ ] Snap package support
@@ -354,7 +354,7 @@ Possible additions:
 - [ ] Alpine Linux packages
 - [ ] RedHat/Fedora RPM packages
 
-## 📝 Files Summary
+##  Files Summary
 
 ```
 .github/workflows/
@@ -383,7 +383,7 @@ Documentation/
 Dockerfile                        # Container build
 ```
 
-## 📞 Support
+##  Support
 
 For issues or questions:
 1. Check `PACKAGING.md` for detailed documentation

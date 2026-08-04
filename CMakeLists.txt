@@ -33,6 +33,7 @@ option(RGTP_BUILD_TESTS "Build test suite" ON)
 option(RGTP_BUILD_EXAMPLES "Build example programs" ON)
 option(RGTP_ENABLE_FEC "Enable Forward Error Correction" ON)
 option(RGTP_ENABLE_SIMD "Enable SIMD optimizations" ON)
+option(RGTP_ENABLE_SATELLITE "Enable satellite communications module" ON)
 
 # Fuzz-specific flags (applied only to fuzz targets, not compiler checks)
 set(RGTP_FUZZ_FLAGS "" CACHE STRING "Compiler flags for fuzz targets only")
@@ -71,6 +72,10 @@ endif()
 
 if(RGTP_ENABLE_SIMD)
     add_compile_definitions(RGTP_ENABLE_SIMD)
+endif()
+
+if(RGTP_ENABLE_SATELLITE)
+    add_compile_definitions(RGTP_ENABLE_SATELLITE)
 endif()
 
 #
@@ -244,6 +249,7 @@ message(STATUS "  Compiler:          ${CMAKE_C_COMPILER}")
 message(STATUS "  Crypto Backend:    ${RGTP_CRYPTO_BACKEND}")
 message(STATUS "  Enable FEC:        ${RGTP_ENABLE_FEC}")
 message(STATUS "  Enable SIMD:       ${RGTP_ENABLE_SIMD}")
+message(STATUS "  Enable Satellite:  ${RGTP_ENABLE_SATELLITE}")
 message(STATUS "  Build Tests:       ${RGTP_BUILD_TESTS}")
 message(STATUS "  Build Examples:    ${RGTP_BUILD_EXAMPLES}")
 message(STATUS "===================================")

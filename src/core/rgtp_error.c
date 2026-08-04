@@ -26,6 +26,7 @@ const char* rgtp_strerror(rgtp_error_t err)
     case RGTP_ERR_RATE_LIMITED:    return "Pull request rate limit exceeded";
     case RGTP_ERR_NOT_SUPPORTED:   return "Feature not supported on this platform or build configuration";
     case RGTP_ERR_INTERNAL:        return "Internal invariant violation (this is a bug)";
+    case RGTP_ERR_SATELLITE_NO_CONTACT: return "No active satellite contact window";
     default:                       return "Unknown error code";
     }
 }

@@ -107,6 +107,9 @@ struct rgtp_surface_s {
 
     /* ── Config snapshot ────────────────────────────────────────────────── */
     rgtp_config_t    config;
+    
+    /* ── Satellite context (if satellite_mode enabled) ──────────────────── */
+    void*            sat_context;
 };
 
 /* ── Internal socket struct (opaque to callers) ─────────────────────────── */
