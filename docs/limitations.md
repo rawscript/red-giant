@@ -23,6 +23,7 @@ All 23 task groups are complete, including all optional property-based tests and
 | Low-latency, priority scheduling, NAT traversal | 13.1–13.3 | ✅ Complete |
 | Observability (logging, Prometheus metrics, OpenTelemetry) | 14.1–14.3 | ✅ Complete |
 | Automotive middleware (ROS2, DDS, SOME/IP) | 16.1–16.3 | ✅ Complete |
+| Satellite communications (CCSDS, link management) | 16.4 | ✅ Complete |
 | Language bindings (Node.js, Go, Python) | 17.1–17.3 | ✅ Complete |
 | Unit test suite | 18.1–18.5 | ✅ Complete |
 | Integration, fuzz, and regression tests | 19.1–19.5 | ✅ Complete |

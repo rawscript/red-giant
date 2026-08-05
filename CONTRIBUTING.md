@@ -27,6 +27,7 @@ cd red-giant
 cmake -B build \
   -DRGTP_CRYPTO_BACKEND=libsodium \
   -DRGTP_ENABLE_FEC=ON \
+  -DRGTP_ENABLE_SATELLITE=ON \
   -DRGTP_BUILD_TESTS=ON \
   -DRGTP_BUILD_EXAMPLES=ON
 
@@ -105,6 +106,20 @@ cd bindings/python && python -m pytest tests/ -v
 - **Language bindings** — new bindings go in `bindings/<language>/`. Follow the existing Node.js, Go, and Python patterns.
 - **Examples** — C examples go in `examples/c/`. Keep them self-contained.
 - **Platform support** — new toolchain files go in `cmake/toolchains/`.
+- **Satellite communications** — satellite module code in `src/satellite/`. CCSDS protocol implementations in `src/io/`. All satellite features require corresponding tests in `tests/test_satellite.c`.
+
+## Satellite Module Guidelines
+
+When contributing to satellite communications features:
+
+- Link quality calculations must use industry-standard formulas (ITU-R, CCSDS specifications)
+- CCSDS protocol implementations must conform to published CCSDS Blue Books
+- All Doppler compensation algorithms must handle rate-of-change prediction
+- Contact window scheduling must support multiple overlapping windows
+- Store-and-forward implementations must enforce configurable limits
+- Link budget calculations must account for all space link types (UHF, S-Band, X-Band, Ka-Band, Optical)
+- Emergency telecommand functions must validate contact status before transmission
+- All satellite statistics must use atomic operations for thread safety
 
 ## Questions
 

@@ -257,7 +257,7 @@ docker run -it -v /path/to/repo:/build ubuntu:22.04
 cd /build
 apt-get update
 apt-get install -y build-essential cmake ninja-build libsodium-dev
-cmake -B build -DRGTP_BUILD_TESTS=ON
+cmake -B build -DRGTP_BUILD_TESTS=ON -DRGTP_ENABLE_FEC=ON -DRGTP_ENABLE_SATELLITE=ON
 cmake --build build
 ctest --test-dir build
 ```
@@ -304,7 +304,7 @@ A successful release should include:
 ### Build Fails
 ```bash
 # Test locally
-cmake -B build -DRGTP_BUILD_TESTS=ON
+cmake -B build -DRGTP_BUILD_TESTS=ON -DRGTP_ENABLE_FEC=ON -DRGTP_ENABLE_SATELLITE=ON
 cmake --build build
 ctest --test-dir build
 ```

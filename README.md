@@ -304,6 +304,150 @@ rgtp_cleanup();
 
 ---
 
+## Satellite Communications
+
+RGTP provides native support for satellite and space communications with integrated CCSDS protocol handling, adaptive link management, and store-and-forward capabilities for intermittent connectivity.
+
+### Space Link Types
+
+RGTP supports multiple space link frequency bands:
+
+- **UHF Band** (300 MHz - 3 GHz): Low data rates, high reliability
+- **S-Band** (2-4 GHz): Standard telemetry and telecommand
+- **X-Band** (8-12 GHz): High-rate data downlink
+- **Ka-Band** (26-40 GHz): Very high data rates
+- **Optical** (Laser): Ultra-high data rates for deep space
+
+### CCSDS Protocol Support
+
+**Telemetry and Telecommand (TM/TC)**
+- PUS (Packet Utilization Standard) compliant
+- Service types 1-23 support
+- Automatic CRC-16 validation
+- Sequence counting and replay protection
+
+**Advanced Orbiting Systems (AOS)**
+- Virtual channel multiplexing
+- MPDU aggregation and fragmentation
+- Frame synchronization and error detection
+- VCDU counting
+
+**CCSDS File Delivery Protocol (CFDP)**
+- Metadata PDU handling
+- Segmented file data transfer
+- EOF and Finished PDU acknowledgment
+- Transaction management
+
+### Link Management Features
+
+**Adaptive Coding and Modulation**
+- Real-time SNR and BER monitoring
+- Dynamic FEC parameter adjustment
+- Link quality threshold enforcement
+- Automatic degraded mode switching
+
+**Doppler Shift Compensation**
+- Predictive Doppler tracking
+- Frequency offset compensation up to specified limits
+- Rate-of-change estimation
+- Multi-sample averaging for stability
+
+**Contact Window Scheduling**
+- Multiple ground station support
+- Automatic contact acquisition
+- Pass prediction integration
+- Data transfer prioritization during contacts
+
+**Store-and-Forward**
+- Priority-based chunk queuing
+- Configurable storage limits (size and time)
+- Automatic overflow handling
+- Contact-aware transmission
+
+**Link Budget Calculation**
+- Path loss computation for all link types
+- Eb/No estimation
+- Link margin analysis
+- Real-time parameter updates
+
+### Satellite Configuration Example
+
+```c
+rgtp_config_t sat_cfg = {
+    .satellite_mode = true,
+    .space_link_type = RGTP_SPACE_LINK_XBAND,
+    .max_rtt_ms = 2400,
+    .link_asymmetry = 15.0f,
+    
+    .ccsds_tm = true,
+    .ccsds_tc = true,
+    .ccsds_aos = true,
+    .ccsds_cfdp = true,
+    .apid = 0x3E0,
+    .spacecraft_id = 100,
+    
+    .min_snr_db = 12.0f,
+    .max_ber = 0.0001f,
+    .doppler_shift_hz = 10000,
+    
+    .store_and_forward = true,
+    .ground_station = "GS-PRIMARY",
+    
+    .chunk_size = 1024,
+    .window_size = 16,
+    .fec_enabled = true,
+    .fec_k = 200,
+    .fec_n = 255,
+};
+```
+
+### Runtime Link Management
+
+```c
+rgtp_update_link_parameters(surface, 14.2f, 0.00008f, 5240);
+
+rgtp_configure_doppler(surface, true, 15000, 10.0f);
+
+uint64_t aos = time(NULL) + 420;
+uint64_t los = aos + 540;
+rgtp_schedule_contact(surface, aos, los, "GS-BACKUP");
+
+uint8_t tc_cmd[64];
+rgtp_send_emergency_tc(surface, tc_cmd, sizeof(tc_cmd), 255);
+```
+
+### Monitoring and Statistics
+
+```c
+rgtp_satellite_stats_t stats;
+rgtp_get_satellite_stats(surface, &stats);
+
+printf("SNR: %.2f dB, BER: %.6f\n", stats.snr_db, stats.ber);
+printf("Link Margin: %.2f dB\n", stats.link_margin_db);
+printf("Doppler Offset: %d Hz\n", stats.doppler_offset_hz);
+printf("Spacecraft Health: %u%%\n", stats.spacecraft_health);
+printf("Contact Attempts: %u, Successful: %u\n", 
+       stats.contact_attempts, stats.successful_contacts);
+printf("Stored Chunks: %u (%llu bytes)\n", 
+       stats.stored_chunks, stats.stored_bytes);
+printf("CCSDS Frames TX: %u, RX: %u, Errors: %u\n",
+       stats.ccsds_frames_sent, stats.ccsds_frames_received, 
+       stats.ccsds_frame_errors);
+```
+
+### Space Environment Considerations
+
+RGTP satellite mode implements several space-specific optimizations:
+
+- High latency tolerance (configurable RTT up to 10 seconds)
+- Asymmetric link handling (different uplink/downlink rates)
+- Intermittent connectivity support via store-and-forward
+- Radiation-tolerant operation (no single-point state dependencies)
+- Power-aware scheduling (respects spacecraft power budget via health monitoring)
+- Temperature compensation in link budget calculations
+
+---
+
 ## Language Bindings
 
 ### Go
@@ -467,6 +611,7 @@ RGTP's security model:
 - **Key material** — zeroized with `sodium_memzero` / `OPENSSL_cleanse` before `free`. Never transmitted over the wire.
 - **DoS mitigation** — per-source token-bucket rate limiter (1,000 req/s per Exposure). Bounded per-surface data structures prevent unbounded memory growth.
 - **Memory safety** — zero sanitizer errors under ASan/UBSan/TSan across the full test suite.
+- **Satellite security** — CCSDS frames include authentication tags and sequence validation. Emergency telecommands require explicit priority levels. Contact window verification prevents unauthorized transmissions.
 
 See [SECURITY.md](SECURITY.md) for the vulnerability reporting policy.
 

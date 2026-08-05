@@ -23,12 +23,22 @@ RGTP's security guarantees are:
 
 **Memory safety** — The library is compiled with AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer in CI. Zero sanitizer errors are required across the full unit and integration test suite.
 
+**Satellite communications security** — When satellite mode is enabled, additional security measures apply:
+- CCSDS frames include CRC-16 validation and sequence counters to detect corruption and replay attacks
+- Emergency telecommand transmission requires explicit priority levels and validates contact window status
+- Contact window scheduling prevents unauthorized transmissions outside designated ground station passes
+- Link quality thresholds enforce minimum SNR and maximum BER before accepting data
+- Store-and-forward buffers have configurable size limits to prevent resource exhaustion
+- Spacecraft health monitoring can trigger automatic link degradation or shutdown
+
 ## Known Limitations
 
 - **Key distribution is out-of-band.** RGTP does not provide a key exchange mechanism. The application is responsible for distributing the 256-bit AEAD key to authorized pullers (e.g., via TLS, a pre-shared key, or a dedicated key exchange protocol).
 - **No forward secrecy.** A single key is used for all chunks of an Exposure. Compromise of the key exposes all chunks of that Exposure.
 - **Raw Ethernet mode bypasses IP-layer firewalls.** When `RGTP_ENABLE_RAW_ETHERNET` is used, RGTP frames are not subject to IP-layer firewall rules. Ensure appropriate L2 access controls are in place.
 - **TURN relay traffic is unencrypted at the relay.** When NAT traversal falls back to a TURN relay, the relay sees encrypted RGTP packets but can observe traffic patterns. Use a trusted TURN server.
+- **Satellite ground station authentication is application-managed.** RGTP validates contact windows and spacecraft identifiers but does not authenticate ground stations cryptographically. Applications must implement ground station authentication separately.
+- **CCSDS telecommand authorization is priority-based only.** Emergency telecommands use numeric priority levels without cryptographic signatures. Mission-critical systems should add application-layer command authentication.
 
 ## Reporting a Vulnerability
 
