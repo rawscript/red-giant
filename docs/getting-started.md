@@ -31,6 +31,7 @@ Optional:
 cmake -B build \
   -DRGTP_CRYPTO_BACKEND=libsodium \   # or: openssl
   -DRGTP_ENABLE_FEC=ON \
+  -DRGTP_ENABLE_SATELLITE=ON \
   -DRGTP_ENABLE_RAW_ETHERNET=OFF \
   -DRGTP_ENABLE_IOURING=OFF \
   -DRGTP_ENABLE_SIMD=ON \
@@ -90,6 +91,7 @@ cmake --build build --target analyze
 | `RGTP_ENABLE_RAW_ETHERNET` | `OFF` | Enable `AF_PACKET` raw Ethernet mode |
 | `RGTP_ENABLE_IOURING` | `OFF` | Enable io_uring I/O backend (Linux 5.1+) |
 | `RGTP_ENABLE_SIMD` | `ON` | Enable SSE4.2/AVX2/NEON acceleration |
+| `RGTP_ENABLE_SATELLITE` | `ON` | Enable satellite communications with CCSDS |
 | `RGTP_BUILD_TESTS` | `OFF` | Build and register tests with CTest |
 | `RGTP_BUILD_EXAMPLES` | `OFF` | Build example programs |
 | `RGTP_BUILD_BINDINGS` | `OFF` | Build language bindings |
@@ -320,3 +322,88 @@ asyncio.run(main())
 **SIMD** — enabled by default. Disable with `RGTP_ENABLE_SIMD=OFF` only for debugging or on platforms without SSE4.2/AVX2/NEON.
 
 **Embedded profile** — set `RGTP_MEMORY_PROFILE=EMBEDDED` to replace all heap allocations with arena allocations. Maximum exposure size is 16 MB and maximum chunk count is 16384 in this mode.
+
+
+---
+
+## Satellite Communications Mode
+
+RGTP provides native support for satellite and space communications with CCSDS protocol integration.
+
+### Basic Satellite Configuration
+
+```c
+rgtp_config_t sat_cfg = {
+    .satellite_mode = true,
+    .space_link_type = RGTP_SPACE_LINK_SBAND,
+    .max_rtt_ms = 2000,
+    .link_asymmetry = 10.0f,
+    
+    .ccsds_tm = true,
+    .ccsds_tc = true,
+    .apid = 0x3E0,
+    .spacecraft_id = 42,
+    
+    .min_snr_db = 10.0f,
+    .max_ber = 0.001f,
+    
+    .store_and_forward = true,
+    .ground_station = "GS-MADRID",
+    
+    .chunk_size = 1024,
+    .window_size = 16,
+    .fec_enabled = true,
+    .fec_k = 200,
+    .fec_n = 255,
+};
+
+rgtp_socket_t *sock = NULL;
+rgtp_socket_create(&sat_cfg, &sock);
+
+rgtp_surface_t *surface = NULL;
+rgtp_expose(sock, data, data_size, &sat_cfg, &surface);
+```
+
+### Contact Window Scheduling
+
+```c
+uint64_t contact_start = time(NULL) + 300;
+uint64_t contact_end = contact_start + 600;
+rgtp_schedule_contact(surface, contact_start, contact_end, "GS-MADRID");
+
+bool in_contact;
+uint32_t time_to_contact, time_left;
+rgtp_check_contact_status(surface, &in_contact, &time_to_contact, &time_left);
+```
+
+### Link Quality Management
+
+```c
+rgtp_update_link_parameters(surface, 14.5f, 0.00008f, 5200);
+
+rgtp_configure_doppler(surface, true, 15000, 10.0f);
+
+float margin_db, ebno_db;
+rgtp_calculate_link_budget(surface, &margin_db, &ebno_db);
+```
+
+### Monitoring Satellite Statistics
+
+```c
+rgtp_satellite_stats_t stats;
+rgtp_get_satellite_stats(surface, &stats);
+
+printf("SNR: %.2f dB, BER: %.6f\n", stats.snr_db, stats.ber);
+printf("Link Margin: %.2f dB\n", stats.link_margin_db);
+printf("Doppler: %d Hz\n", stats.doppler_offset_hz);
+printf("Spacecraft Health: %u%%\n", stats.spacecraft_health);
+```
+
+### Emergency Telecommands
+
+```c
+uint8_t tc_cmd[64] = { /* telecommand data */ };
+rgtp_send_emergency_tc(surface, tc_cmd, sizeof(tc_cmd), 255);
+```
+
+See the main README for comprehensive satellite documentation.

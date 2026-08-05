@@ -68,6 +68,18 @@ RGTP does not guarantee delivery of every chunk. Loss recovery is provided by FE
 
 The exposer collects pull requests within a 10ms window before sending each chunk once to the multicast group. This introduces up to 10ms of additional latency for the first chunk delivery in multicast mode. For latency-critical applications, use unicast mode or reduce the aggregation window via configuration.
 
+### Satellite Ground Station Authentication
+
+RGTP satellite mode validates contact windows and spacecraft identifiers but does not provide cryptographic authentication of ground stations. Applications requiring secure ground station authentication must implement this at the application layer using mutual TLS, digital signatures, or other authentication mechanisms.
+
+### CCSDS Protocol Subset
+
+The current CCSDS implementation supports TM/TC (Telemetry/Telecommand), AOS (Advanced Orbiting Systems), and CFDP (File Delivery Protocol) at the PDU level. Full protocol stacks including all service types, segmentation/reassembly for very large files, and Proximity-1 inter-satellite links are not yet implemented. These features are planned for future releases based on user demand.
+
+### Link Budget Simplified Model
+
+Link budget calculations use standard path loss models and assume free-space propagation. Real-world factors such as atmospheric absorption, rain fade, scintillation, multipath, and antenna pointing errors are not modeled. Applications requiring high-fidelity link budget analysis should use dedicated mission planning tools and feed measured parameters to RGTP via the link parameter update API.
+
 ---
 
 ## Roadmap
@@ -80,6 +92,7 @@ The exposer collects pull requests within a 10ms window before sending each chun
 - Publish AV integration guide (raw Ethernet setup, TSN configuration, ROS2 plugin)
 - Publish security guide (threat model, key management, known limitations)
 - Publish performance tuning guide (chunk size, FEC params, GSO/GRO, io_uring, SIMD)
+- Publish satellite operations guide (contact planning, link budget optimization, CCSDS integration)
 
 ### Medium-Term
 
@@ -87,6 +100,9 @@ The exposer collects pull requests within a 10ms window before sending each chun
 - Kernel-bypass support via DPDK for line-rate 100 GbE operation
 - Multi-path support (simultaneous use of multiple network interfaces)
 - QUIC transport backend as an alternative to raw UDP
+- Complete CCSDS protocol stack implementation (all service types, Proximity-1)
+- Deep space network (DSN) integration with automatic relay scheduling
+- Adaptive modulation and coding (AMC) with real-time link quality feedback
 
 ### Long-Term
 
