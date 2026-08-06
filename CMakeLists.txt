@@ -93,9 +93,34 @@ else()
     message(FATAL_ERROR "Unknown crypto backend: ${RGTP_CRYPTO_BACKEND}")
 endif()
 
-# Source files
-file(GLOB_RECURSE RGTP_SOURCES "src/*.c")
-file(GLOB_RECURSE RGTP_HEADERS "include/*.h")
+# Source files - explicitly listed to avoid GLOB issues
+set(RGTP_SOURCES
+    src/core/rgtp_alloc.c
+    src/core/rgtp_core.c
+    src/core/rgtp_error.c
+    src/core/rgtp_init.c
+    src/crypto/rgtp_crypto.c
+    src/io/rgtp_socket.c
+    src/io/rgtp_sendmmsg.c
+    src/io/rgtp_raweth.c
+    src/io/rgtp_iocp.c
+    src/io/rgtp_iouring.c
+    src/fec/rgtp_fec.c
+    src/merkle/rgtp_merkle.c
+    src/wire/rgtp_wire.c
+    src/middleware/rgtp_flow.c
+    src/middleware/rgtp_replay.c
+)
+
+# Add satellite sources if enabled
+if(RGTP_ENABLE_SATELLITE)
+    list(APPEND RGTP_SOURCES src/satellite/rgtp_satellite.c)
+endif()
+
+# Headers
+set(RGTP_HEADERS
+    include/rgtp/rgtp.h
+)
 
 # Library targets
 add_library(rgtp_shared SHARED ${RGTP_SOURCES})
