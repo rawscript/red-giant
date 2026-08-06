@@ -99,6 +99,7 @@ set(RGTP_SOURCES
     src/core/rgtp_core.c
     src/core/rgtp_error.c
     src/core/rgtp_init.c
+    src/core/rgtp_stubs.c
     src/crypto/rgtp_crypto.c
     src/io/rgtp_socket.c
     src/io/rgtp_sendmmsg.c
