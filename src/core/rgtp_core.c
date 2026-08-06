@@ -270,23 +270,27 @@ void rgtp_served_list_cleanup(void)
 
 int rgtp_init(void)
 {
-    /* Initialize served_list mutex first */
+    /* Initialize served_list mutex (idempotent) */
 #ifdef _WIN32
-    InitializeCriticalSection(&s_served_mutex);
+    BOOL result = InitializeCriticalSectionAndSpinCount(&s_served_mutex, 0x80000000);
+    if (!result) {
+        return -1;
+    }
 #endif
     
+    /* Initialize Reed-Solomon tables (thread-safe) */
     rs_init_tables();
     rs_generate_poly();
     
 #ifdef _WIN32
     WSADATA wsa;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsa);
-    if (result != 0) {
-#ifdef _WIN32
+    int wsa_result = WSAStartup(MAKEWORD(2, 2), &wsa);
+    if (wsa_result != 0) {
         DeleteCriticalSection(&s_served_mutex);
-#endif
         return -1;
     }
+#else
+    /* No global initialization needed for pthread_mutex */
 #endif
     
     return 0;
@@ -297,10 +301,15 @@ void rgtp_cleanup(void)
     rgtp_served_list_cleanup();
     
 #ifdef _WIN32
-    DeleteCriticalSection(&s_served_mutex);
+    /* For Windows, we don't actually delete the critical section
+     * to avoid issues with re-initialization. The OS will clean it up
+     * when the process terminates. */
+    /* DeleteCriticalSection(&s_served_mutex); */
     WSACleanup();
 #else
+    /* Destroy mutex - this is not idempotent on all platforms */
     pthread_mutex_destroy(&s_served_mutex);
+    pthread_mutex_destroy(&s_rs_init_mutex);
 #endif
 }
 
