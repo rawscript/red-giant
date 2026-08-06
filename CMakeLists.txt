@@ -1,15 +1,15 @@
-cmake_minimum_required(VERSION 3.15)
+﻿cmake_minimum_required(VERSION 3.15)
 project(red-giant C)
 
-# ─────────────────────────────────────────────────────────────────[...]
+# [...]
 # Project metadata
-# ─────────────────────────────────────────────────────────────────[...]
+# [...]
 set(PROJECT_VERSION 1.0.0)
 set(PROJECT_DESCRIPTION "Red Giant Exposure-based Transport Protocol")
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Compilation settings
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -23,9 +23,9 @@ endif()
 # Position independent code for shared libraries
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Build options
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 set(RGTP_CRYPTO_BACKEND "libsodium" CACHE STRING "Cryptography backend (libsodium or openssl)")
 set_property(CACHE RGTP_CRYPTO_BACKEND PROPERTY STRINGS libsodium openssl)
 
@@ -38,9 +38,9 @@ option(RGTP_ENABLE_SATELLITE "Enable satellite communications module" ON)
 # Fuzz-specific flags (applied only to fuzz targets, not compiler checks)
 set(RGTP_FUZZ_FLAGS "" CACHE STRING "Compiler flags for fuzz targets only")
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Compiler flags
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 set(CMAKE_C_FLAGS_DEBUG "-g -O0 -DDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-g -O2 -DNDEBUG")
@@ -52,9 +52,9 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wformat=2 -Wstrict-prototypes)
 endif()
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # SIMD support
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 if(RGTP_ENABLE_SIMD)
     include(CheckCCompilerFlag)
     check_c_compiler_flag(-march=native COMPILER_SUPPORTS_MARCH_NATIVE)
@@ -63,9 +63,9 @@ if(RGTP_ENABLE_SIMD)
     endif()
 endif()
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Feature definitions
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 if(RGTP_ENABLE_FEC)
     add_compile_definitions(RGTP_ENABLE_FEC)
 endif()
@@ -79,17 +79,17 @@ if(RGTP_ENABLE_SATELLITE)
 endif()
 
 #
-──────────────────────────────────────────────────────────────────[...]
+[...]
 # CCSDS adaptor 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 option(RGTP_TRANSPORT_CCSDS "Build with CCSDS Space Packet transport" OFF)
 
 if(RGTP_TRANSPORT_CCSDS)
   target_sources(rgtp PRIVATE src/io/transport_ccsds.c)
   target_compile_definitions(rgtp PRIVATE RGTP_HAVE_CCSDS=1)
-endif() ──────────────────────────────────────────────────────────────────[...]
+endif() [...]
 # Crypto backend detection
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 if(RGTP_CRYPTO_BACKEND STREQUAL "libsodium")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SODIUM REQUIRED libsodium)
@@ -107,15 +107,15 @@ else()
     message(FATAL_ERROR "Unknown crypto backend: ${RGTP_CRYPTO_BACKEND}")
 endif()
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Source files
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 file(GLOB_RECURSE RGTP_SOURCES "src/*.c")
 file(GLOB_RECURSE RGTP_HEADERS "include/*.h")
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Library targets
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 add_library(rgtp_shared SHARED ${RGTP_SOURCES})
 add_library(rgtp_static STATIC ${RGTP_SOURCES})
 
@@ -150,54 +150,23 @@ if(WIN32)
     target_link_libraries(rgtp_static PRIVATE ws2_32 iphlpapi)
 endif()
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Version information
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 set_target_properties(rgtp_shared PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
 )
 
-# ──────────────────────────────────────────────────────────────────[...]
 # Tests
-# ──────────────────────────────────────────────────────────────────[...]
 if(RGTP_BUILD_TESTS)
     enable_testing()
-    
-    file(GLOB TEST_SOURCES "tests/*.c" "test/*.c")
-    foreach(test_file ${TEST_SOURCES})
-        get_filename_component(test_name ${test_file} NAME_WE)
-        add_executable(test_${test_name} ${test_file})
-        target_include_directories(test_${test_name}
-            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
-            PRIVATE ${CRYPTO_INCLUDE_DIRS}
-        )
-        target_link_libraries(test_${test_name} PRIVATE rgtp_static ${CRYPTO_LIBRARIES} m pthread)
-        add_test(NAME ${test_name} COMMAND test_${test_name})
-    endforeach()
-    
-    # Fuzz tests
-    file(GLOB FUZZ_SOURCES "tests/fuzz/*.c")
-    foreach(fuzz_file ${FUZZ_SOURCES})
-        get_filename_component(fuzz_name ${fuzz_file} NAME_WE)
-        add_executable(${fuzz_name} ${fuzz_file})
-        target_include_directories(${fuzz_name}
-            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
-            PRIVATE ${CRYPTO_INCLUDE_DIRS}
-        )
-        target_link_libraries(${fuzz_name} PRIVATE rgtp_static ${CRYPTO_LIBRARIES} m pthread)
-        
-        # Apply fuzz-specific flags only to fuzz targets
-        if(RGTP_FUZZ_FLAGS)
-            target_compile_options(${fuzz_name} PRIVATE ${RGTP_FUZZ_FLAGS})
-            target_link_options(${fuzz_name} PRIVATE ${RGTP_FUZZ_FLAGS})
-        endif()
-    endforeach()
+    add_subdirectory(tests)
 endif()
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Examples
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 if(RGTP_BUILD_EXAMPLES)
     file(GLOB EXAMPLE_SOURCES "examples/c/*.c")
     foreach(example_file ${EXAMPLE_SOURCES})
@@ -211,18 +180,18 @@ if(RGTP_BUILD_EXAMPLES)
     endforeach()
 endif()
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Static analysis target
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 add_custom_target(analyze
     COMMAND cppcheck --enable=all --std=c99 ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include || true
     COMMAND clang-tidy-14 ${RGTP_SOURCES} -- -I${CMAKE_CURRENT_SOURCE_DIR}/include || true
     COMMENT "Running static analysis tools..."
 )
 
-# ─────────────────────────────────────────────────────────────────[...]
+# [...]
 # Installation
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 include(GNUInstallDirs)
 
 # Install libraries
@@ -238,9 +207,9 @@ install(DIRECTORY include/
     FILES_MATCHING PATTERN "*.h"
 )
 
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 # Print configuration summary
-# ──────────────────────────────────────────────────────────────────[...]
+# [...]
 message(STATUS "")
 message(STATUS "=== RGTP Build Configuration ===")
 message(STATUS "  Version:           ${PROJECT_VERSION}")
