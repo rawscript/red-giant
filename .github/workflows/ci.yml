@@ -83,14 +83,14 @@ jobs:
             sanitizer: asan
             cmake_extra: -DCMAKE_C_FLAGS="-fsanitize=address"
 
-          # Windows Server 2022 — MSVC + OpenSSL + /fsanitize=address
+          # Windows Server 2022 — MSVC + OpenSSL (ASan not supported with MSVC in this config)
           - os: windows-2022
             compiler: msvc
             cc: cl
             cxx: cl
             crypto: openssl
-            sanitizer: asan
-            cmake_extra: -DCMAKE_C_FLAGS="/fsanitize=address"
+            sanitizer: none
+            cmake_extra: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -204,7 +204,6 @@ jobs:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DRGTP_CRYPTO_BACKEND=libsodium \
             -DRGTP_BUILD_TESTS=ON \
-            -DCMAKE_C_FLAGS="-fsanitize=address,undefined" \
             -DCMAKE_C_FLAGS="-fsanitize=fuzzer,address,undefined"
 
       - name: Build fuzz target
