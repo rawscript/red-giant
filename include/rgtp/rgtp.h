@@ -289,6 +289,13 @@ void          rgtp_cleanup(void);
 const char*   rgtp_version(void);
 
 /**
+ * @brief Check if the library is currently initialized.
+ *
+ * @return Non-zero if initialized, zero otherwise.
+ */
+int           rgtp_is_initialized(void);
+
+/**
  * @brief Return a human-readable description of an error code.
  * @param err  An rgtp_error_t value.
  * @return     A null-terminated string. Never returns NULL.
@@ -305,6 +312,13 @@ const char*   rgtp_strerror(rgtp_error_t err);
  * @return RGTP_OK or RGTP_ERR_INVALID_ARG.
  */
 rgtp_error_t  rgtp_set_allocator(const rgtp_allocator_t* alloc);
+
+/**
+ * @brief Check if the library is currently initialized.
+ *
+ * @return Non-zero if initialized, zero otherwise.
+ */
+int           rgtp_is_initialized(void);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Socket management

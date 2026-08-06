@@ -5,11 +5,15 @@
  * rgtp_init() must be called exactly once before any other RGTP function.
  * It is idempotent — subsequent calls return RGTP_OK without re-initialising.
  *
+ * Thread-safety:
+ *  - Uses platform-specific once-init (InitOnceExecuteOnce / pthread_once)
+ *  - All global state access is atomic or protected by initialization
+ *  - Cleanup is safe to call multiple times from any thread
+ *
  * Responsibilities:
  *  1. Initialise the crypto backend (sodium_init / RAND_poll).
  *  2. Initialise Winsock on Windows (WSAStartup).
  *  3. Initialise GF(2^8) FEC tables (gf256_init) when FEC is enabled.
- *  4. Set runtime SIMD dispatch function pointers when SIMD is enabled.
  *
  * Requirements: 3.13, 8.4, 21.4
  */
@@ -79,11 +83,6 @@ static void do_init(void)
     gf256_init();
 #endif
 
-    /* SIMD dispatch — function pointers are set in rgtp_rs_simd.c at
-     * module load time via constructor attributes; nothing to do here
-     * unless a runtime CPUID check is needed on platforms without
-     * __attribute__((constructor)) support. */
-
 done:
     atomic_store(&s_init_result, result);
     atomic_store(&s_initialised, 1);
@@ -113,32 +112,41 @@ rgtp_error_t rgtp_init(void)
     return (rgtp_error_t)atomic_load(&s_init_result);
 }
 
+int rgtp_is_initialized(void)
+{
+    return atomic_load(&s_initialised);
+}
+
 void rgtp_cleanup(void)
 {
-    if (!atomic_load(&s_initialised)) {
-        return;
+    /* Use atomic test-and-set to ensure only one cleanup runs */
+    if (!atomic_exchange(&s_initialised, 0)) {
+        return;  /* Already cleaned up or not initialised */
     }
 
 #ifdef _WIN32
     WSACleanup();
 #endif
 
-    /* Reset state so rgtp_init() can be called again if needed */
-    atomic_store(&s_initialised, 0);
-    atomic_store(&s_init_result, RGTP_OK);
-
-    /* Re-arm the once guard — platform-specific */
+    /* Re-arm the once guard for potential re-initialisation */
 #ifdef _WIN32
     {
         INIT_ONCE fresh = INIT_ONCE_STATIC_INIT;
+        /* Memory barrier to ensure visibility */
+        atomic_thread_fence(memory_order_release);
         s_once = fresh;
     }
 #else
     {
         pthread_once_t fresh = PTHREAD_ONCE_INIT;
+        /* Memory barrier to ensure visibility */
+        atomic_thread_fence(memory_order_release);
         s_once = fresh;
     }
 #endif
+
+    /* Reset result for potential re-init */
+    atomic_store(&s_init_result, RGTP_OK);
 }
 
 const char* rgtp_version(void)
