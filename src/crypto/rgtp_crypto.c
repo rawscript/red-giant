@@ -30,9 +30,43 @@
 #elif defined(RGTP_CRYPTO_BACKEND_OPENSSL)
 #  include <openssl/evp.h>
 #  include <openssl/err.h>
+#  include <openssl/rand.h>
 #else
 #  error "rgtp_crypto: no crypto backend. Build with RGTP_CRYPTO_BACKEND=libsodium or openssl."
 #endif
+
+/* ── Zeroization ────────────────────────────────────────────────────────── */
+
+void rgtp_zeroize(void* ptr, size_t len)
+{
+#if defined(RGTP_CRYPTO_BACKEND_LIBSODIUM)
+    sodium_memzero(ptr, len);
+#elif defined(RGTP_CRYPTO_BACKEND_OPENSSL)
+    OPENSSL_cleanse(ptr, len);
+#endif
+}
+
+/* ── CSPRNG ─────────────────────────────────────────────────────────────── */
+
+rgtp_error_t rgtp_csprng_bytes(void* buf, size_t len)
+{
+#if defined(RGTP_CRYPTO_BACKEND_LIBSODIUM)
+    if (randombytes_buf(buf, len) != 0) {
+        return RGTP_ERR_CRYPTO_INIT;
+    }
+    return RGTP_OK;
+#elif defined(RGTP_CRYPTO_BACKEND_OPENSSL)
+    if (RAND_bytes(buf, (int)len) != 1) {
+        return RGTP_ERR_CRYPTO_INIT;
+    }
+    return RGTP_OK;
+#endif
+}
+
+rgtp_error_t rgtp_generate_exposure_id(uint8_t out_id[16])
+{
+    return rgtp_csprng_bytes(out_id, 16);
+}
 
 /* ── Nonce construction ─────────────────────────────────────────────────── */
 
