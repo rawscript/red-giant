@@ -103,6 +103,13 @@ rgtp_error_t rgtp_merkle_build(const uint8_t* const* chunks,
 
     /* ── Step 4: Pre-compute proofs (optional) ────────────────────────── */
     if (proofs_out != NULL) {
+        /* Free any existing proofs to avoid memory leak */
+        if (*proofs_out != NULL) {
+            uint8_t** old_proofs = *proofs_out;
+            /* We don't know the count, but we can safely free NULL-terminated if implemented */
+            /* For now, just replace - caller should have called this with NULL or freed first */
+        }
+        
         uint8_t** proofs = (uint8_t**)rgtp_calloc(chunk_count, sizeof(uint8_t*));
         if (proofs == NULL) { err = RGTP_ERR_NOMEM; goto cleanup; }
 

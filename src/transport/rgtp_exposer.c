@@ -130,9 +130,24 @@ rgtp_error_t rgtp_expose(rgtp_socket_t*       sock,
         chunk_size = RGTP_DEFAULT_CHUNK_SIZE_UDP;
     }
 
-    /* Calculate chunk count */
-    uint32_t chunk_count = (uint32_t)((size + chunk_size - 1u) / chunk_size);
+    /* Calculate chunk count with overflow-safe arithmetic */
+    uint64_t size64 = (uint64_t)size;
+    uint64_t chunk_size64 = (uint64_t)chunk_size;
+    uint64_t chunk_count64 = (size64 + chunk_size64 - 1ULL) / chunk_size64;
+    
+    /* Check for overflow - chunk_count must fit in uint32_t */
+    if (chunk_count64 > UINT32_MAX) {
+        return RGTP_ERR_INVALID_ARG;
+    }
+    uint32_t chunk_count = (uint32_t)chunk_count64;
+    
     if (chunk_count == 0) return RGTP_ERR_INVALID_ARG;
+
+    /* Validate embedded mode constraints (if enabled) */
+    rgtp_error_t err = rgtp_embedded_validate_exposure((uint64_t)size, chunk_count);
+    if (err != RGTP_OK) {
+        return err;
+    }
 
     /* Allocate surface */
     rgtp_surface_t* s = rgtp_surface_alloc_exposer(cfg, chunk_count, chunk_size, size);

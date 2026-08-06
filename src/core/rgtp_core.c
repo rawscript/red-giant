@@ -52,12 +52,34 @@ RGTP_THREAD_LOCAL int tls_rng_seeded = 0;
 
 /* ── served_list - protected by mutex ──────────────────────────────────── */
 #ifdef _WIN32
-static INIT_ONCE s_served_mutex_init_once = INIT_ONCE_STATIC_INIT;
+/* Use static allocation with runtime initialization for thread safety */
+static CRITICAL_SECTION s_served_mutex_instance;
+static int s_served_mutex_initialized = 0;
 static CRITICAL_SECTION* s_served_mutex = NULL;
 #else
 static pthread_mutex_t s_served_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t s_rs_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
+
+/* Helper to get mutex pointer safely (thread-safe lazy initialization) */
+static CRITICAL_SECTION* get_served_mutex(void)
+{
+#ifdef _WIN32
+    if (s_served_mutex == NULL) {
+        /* Use InterlockedCompareExchange for thread-safe lazy init */
+        CRITICAL_SECTION* expected = NULL;
+        if (InterlockedCompareExchangePointer((void**)&s_served_mutex, 
+                                               &s_served_mutex_instance, 
+                                               expected) == expected) {
+            /* We won the race - initialize */
+            InitializeCriticalSection(&s_served_mutex_instance);
+        }
+    }
+    return s_served_mutex;
+#else
+    return &s_served_mutex;
+#endif
+}
 
 typedef struct served_client {
     struct sockaddr_in addr;
@@ -71,13 +93,14 @@ static served_client_t* served_list = NULL;
 static void rs_init_tables(void)
 {
     /* Check if already initialized without lock first (fast path) */
-    if (atomic_load(&rs_initialized) == 1) {
+    /* States: 0=not started, 2=tables initialized, 3=poly started, 4=fully initialized */
+    if (atomic_load(&rs_initialized) >= 2) {
         return;
     }
 
     /* Double-checked locking pattern */
 #ifdef _WIN32
-    while (atomic_load(&rs_initialized) == 0) {
+    while (atomic_load(&rs_initialized) < 2) {
         if (InterlockedCompareExchange(&rs_initialized, 1, 0) == 0) {
             /* We got the lock - initialize */
             int i;
@@ -95,7 +118,7 @@ static void rs_init_tables(void)
     }
 #else
     pthread_mutex_lock(&s_rs_init_mutex);
-    if (atomic_load(&rs_initialized) == 0) {
+    if (atomic_load(&rs_initialized) < 2) {
         int i;
         rs_exp[0] = 1;
         for (i = 0; i < 255; i++) {
@@ -139,23 +162,6 @@ static void rs_generate_poly(void)
     }
 }
 
-static void rs_encode_block(const uint8_t* data, uint8_t* out, int data_size)
-{
-    memcpy(out, data, data_size);
-    memset(out + data_size, 0, RS_TOTAL - data_size);
-    for (int i = 0; i < data_size; i++) {
-        uint8_t k = out[i] ^ data[i];
-        if (k == 0) continue;
-        for (int j = 0; j < RS_PARITY - 1; j++) {
-            out[data_size + j] ^= rs_exp[(rs_log[rs_poly[RS_PARITY - 1 - j]] + rs_log[k]) % 255];
-        }
-        out[data_size + RS_PARITY - 1] ^= k;
-    }
-
-    /* Signal that tables are ready */
-    atomic_store(&rs_initialized, 1);
-}
-
 /* ── Thread-local RNG ───────────────────────────────────────────────────── */
 
 static void tls_rng_seed(void)
@@ -192,8 +198,11 @@ int rgtp_already_served(const struct sockaddr_in* client)
 {
     if (!client) return 0;
     
+    CRITICAL_SECTION* mtx = get_served_mutex();
+    if (!mtx) return 0;
+    
 #ifdef _WIN32
-    EnterCriticalSection(&s_served_mutex);
+    EnterCriticalSection(mtx);
 #else
     pthread_mutex_lock(&s_served_mutex);
 #endif
@@ -202,7 +211,7 @@ int rgtp_already_served(const struct sockaddr_in* client)
     while (cur) {
         if (memcmp(&cur->addr, client, sizeof(*client)) == 0) {
 #ifdef _WIN32
-            LeaveCriticalSection(&s_served_mutex);
+            LeaveCriticalSection(mtx);
 #else
             pthread_mutex_unlock(&s_served_mutex);
 #endif
@@ -212,7 +221,7 @@ int rgtp_already_served(const struct sockaddr_in* client)
     }
     
 #ifdef _WIN32
-    LeaveCriticalSection(&s_served_mutex);
+    LeaveCriticalSection(mtx);
 #else
     pthread_mutex_unlock(&s_served_mutex);
 #endif
@@ -223,8 +232,11 @@ void rgtp_mark_served(const struct sockaddr_in* client)
 {
     if (!client) return;
     
+    CRITICAL_SECTION* mtx = get_served_mutex();
+    if (!mtx) return;
+    
 #ifdef _WIN32
-    EnterCriticalSection(&s_served_mutex);
+    EnterCriticalSection(mtx);
 #else
     pthread_mutex_lock(&s_served_mutex);
 #endif
@@ -237,7 +249,7 @@ void rgtp_mark_served(const struct sockaddr_in* client)
     }
     
 #ifdef _WIN32
-    LeaveCriticalSection(&s_served_mutex);
+    LeaveCriticalSection(mtx);
 #else
     pthread_mutex_unlock(&s_served_mutex);
 #endif
@@ -245,8 +257,11 @@ void rgtp_mark_served(const struct sockaddr_in* client)
 
 void rgtp_served_list_cleanup(void)
 {
+    CRITICAL_SECTION* mtx = get_served_mutex();
+    if (!mtx) return;
+    
 #ifdef _WIN32
-    EnterCriticalSection(&s_served_mutex);
+    EnterCriticalSection(mtx);
 #else
     pthread_mutex_lock(&s_served_mutex);
 #endif
@@ -260,7 +275,7 @@ void rgtp_served_list_cleanup(void)
     served_list = NULL;
     
 #ifdef _WIN32
-    LeaveCriticalSection(&s_served_mutex);
+    LeaveCriticalSection(mtx);
 #else
     pthread_mutex_unlock(&s_served_mutex);
 #endif
@@ -270,13 +285,11 @@ void rgtp_served_list_cleanup(void)
 
 int rgtp_init(void)
 {
-    /* Initialize served_list mutex (idempotent) */
-#ifdef _WIN32
-    BOOL result = InitializeCriticalSectionAndSpinCount(&s_served_mutex, 0x80000000);
-    if (!result) {
+    /* Pre-initialize the mutex for served_list (idempotent) */
+    CRITICAL_SECTION* mtx = get_served_mutex();
+    if (!mtx) {
         return -1;
     }
-#endif
     
     /* Initialize Reed-Solomon tables (thread-safe) */
     rs_init_tables();
@@ -286,7 +299,6 @@ int rgtp_init(void)
     WSADATA wsa;
     int wsa_result = WSAStartup(MAKEWORD(2, 2), &wsa);
     if (wsa_result != 0) {
-        DeleteCriticalSection(&s_served_mutex);
         return -1;
     }
 #else
@@ -301,13 +313,11 @@ void rgtp_cleanup(void)
     rgtp_served_list_cleanup();
     
 #ifdef _WIN32
-    /* For Windows, we don't actually delete the critical section
-     * to avoid issues with re-initialization. The OS will clean it up
-     * when the process terminates. */
-    /* DeleteCriticalSection(&s_served_mutex); */
+    /* On Windows, we skip DeleteCriticalSection to handle potential
+     * re-initialization. The OS handles cleanup at process exit. */
     WSACleanup();
 #else
-    /* Destroy mutex - this is not idempotent on all platforms */
+    /* Destroy mutexes - mark as destroyed to prevent reuse issues */
     pthread_mutex_destroy(&s_served_mutex);
     pthread_mutex_destroy(&s_rs_init_mutex);
 #endif

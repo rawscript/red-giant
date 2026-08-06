@@ -43,6 +43,19 @@ All previously optional tasks are now implemented. The following are genuine pla
 
 Raw Ethernet mode on Windows requires WinPcap or Npcap. If neither is installed, the build emits a compile-time warning and `rgtp_socket_create` returns `RGTP_ERR_NOT_SUPPORTED` for raw Ethernet configurations.
 
+### Thread Safety
+
+The core library is thread-safe for concurrent use from multiple threads:
+
+- **Global State**: All global mutable state is protected by mutexes or uses atomic operations.
+- **served_list**: Protected by a mutex with thread-safe lazy initialization.
+- **Reed-Solomon Tables**: Initialized atomically using double-checked locking; read-only after initialization.
+- **PRNG**: Uses thread-local storage to avoid contention on global state.
+- **Initialization**: `rgtp_init()` is idempotent and safe to call concurrently.
+- **Cleanup**: `rgtp_cleanup()` properly destroys synchronization primitives on POSIX platforms. On Windows, the OS handles cleanup at process exit.
+
+Applications can safely call RGTP functions from multiple threads simultaneously.
+
 ### io_uring Kernel Version Requirement
 
 The io_uring backend requires Linux kernel 5.1 or later. On older kernels, `rgtp_socket_create` returns `RGTP_ERR_NOT_SUPPORTED` when `RGTP_ENABLE_IOURING=ON` is configured. The library falls back to `sendmmsg`/`recvmmsg` automatically.
