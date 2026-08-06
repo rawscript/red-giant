@@ -268,6 +268,16 @@ typedef struct rgtp_log_event {
 typedef void (*rgtp_log_fn)(const rgtp_log_event_t* event, void* ctx);
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Contact window structure (forward declaration needed by API)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef struct rgtp_contact_window {
+    uint64_t start_time;
+    uint64_t end_time;
+    char ground_station[32];
+} rgtp_contact_window_t;
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Library lifecycle
  * ═══════════════════════════════════════════════════════════════════════════ */
 
