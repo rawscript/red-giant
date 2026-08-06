@@ -120,6 +120,10 @@ struct rgtp_socket_s {
     rgtp_config_t config;
 };
 
+/* ── Embedded profile validation ───────────────────────────────────────── */
+rgtp_error_t rgtp_embedded_validate_exposure(uint64_t total_size,
+                                              uint32_t chunk_count);
+
 #ifdef __cplusplus
 }
 #endif

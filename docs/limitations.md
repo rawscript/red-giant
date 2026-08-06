@@ -56,6 +56,15 @@ The core library is thread-safe for concurrent use from multiple threads:
 
 Applications can safely call RGTP functions from multiple threads simultaneously.
 
+### Memory Management
+
+The library implements robust memory management with the following protections:
+
+- **Overflow Safety**: `rgtp_expose()` uses 64-bit arithmetic when computing chunk counts to prevent integer overflow.
+- **Embedded Limits**: When `RGTP_MEMORY_PROFILE=EMBEDDED` is defined, exposures are validated against the 16 MB size limit and 16384 chunk limit at runtime.
+- **Cleanup Safety**: All allocation paths in `rgtp_expose()` and `rgtp_merkle_build()` properly free partial allocations on error to prevent memory leaks.
+- **Zero-Copy Path**: The embedded profile supports zero-copy receive buffers to minimize memory copies.
+
 ### io_uring Kernel Version Requirement
 
 The io_uring backend requires Linux kernel 5.1 or later. On older kernels, `rgtp_socket_create` returns `RGTP_ERR_NOT_SUPPORTED` when `RGTP_ENABLE_IOURING=ON` is configured. The library falls back to `sendmmsg`/`recvmmsg` automatically.

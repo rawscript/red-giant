@@ -154,7 +154,7 @@ rgtp_error_t rgtp_expose(rgtp_socket_t*       sock,
     if (!s) return RGTP_ERR_NOMEM;
 
     s->sock = sock;
-    rgtp_error_t err = RGTP_OK;
+    err = RGTP_OK;
 
     /* Step 1: Generate CSPRNG Exposure_ID */
     err = rgtp_generate_exposure_id(s->exposure_id);
