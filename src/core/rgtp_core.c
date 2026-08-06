@@ -327,22 +327,6 @@ void rgtp_cleanup(void)
 
 const char* rgtp_version(void) { return "2.1-reed-solomon"; }
 
-/* ── Thread-safe PRNG usage ─────────────────────────────────────────────── */
-
-void rgtp_generate_exposure_id(uint8_t out_id[16])
-{
-    /* Generate 16 bytes of random data */
-    for (int i = 0; i < 16; i += 4) {
-        uint64_t r = tls_next_random();
-        out_id[i + 0] = (uint8_t)(r & 0xFF);
-        out_id[i + 1] = (uint8_t)((r >> 8) & 0xFF);
-        out_id[i + 2] = (uint8_t)((r >> 16) & 0xFF);
-        out_id[i + 3] = (uint8_t)((r >> 24) & 0xFF);
-    }
-}
-
-/* ── Stub implementations for unimplemented API functions ──────────────── */
-
 rgtp_error_t rgtp_expose(rgtp_socket_t* sock,
                           const void* data,
                           size_t size,
