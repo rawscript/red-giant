@@ -9,6 +9,10 @@
  *  - Reed-Solomon tables are immutable after initialization (read-only)
  *  - served_list is protected by a mutex
  *  - PRNG state uses thread-local storage to avoid contention
+ *
+ * NOTE: Public API functions (rgtp_init, rgtp_version, rgtp_cleanup, etc.)
+ *       are defined in rgtp_init.c
+ *       Stubs for unimplemented functions are in rgtp_stubs.c
  */
 
 #include "rgtp/rgtp.h"
@@ -280,51 +284,3 @@ void rgtp_served_list_cleanup(void)
     pthread_mutex_unlock(&s_served_mutex);
 #endif
 }
-
-/* ── Library initialization ─────────────────────────────────────────────── */
-
-int rgtp_init(void)
-{
-    /* Pre-initialize the mutex for served_list (idempotent) */
-    CRITICAL_SECTION* mtx = get_served_mutex();
-    if (!mtx) {
-        return -1;
-    }
-    
-    /* Initialize Reed-Solomon tables (thread-safe) */
-    rs_init_tables();
-    rs_generate_poly();
-    
-#ifdef _WIN32
-    WSADATA wsa;
-    int wsa_result = WSAStartup(MAKEWORD(2, 2), &wsa);
-    if (wsa_result != 0) {
-        return -1;
-    }
-#else
-    /* No global initialization needed for pthread_mutex */
-#endif
-    
-    return 0;
-}
-
-void rgtp_cleanup(void)
-{
-    rgtp_served_list_cleanup();
-    
-#ifdef _WIN32
-    /* On Windows, we skip DeleteCriticalSection to handle potential
-     * re-initialization. The OS handles cleanup at process exit. */
-    WSACleanup();
-#else
-    /* Destroy mutexes - mark as destroyed to prevent reuse issues */
-    pthread_mutex_destroy(&s_served_mutex);
-    pthread_mutex_destroy(&s_rs_init_mutex);
-#endif
-}
-
-/* ── Public API functions ───────────────────────────────────────────────── */
-
-const char* rgtp_version(void) { return "2.1-reed-solomon"; }
-
-int rgtp_is_initialized(void) { return 0; }
