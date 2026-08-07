@@ -222,6 +222,23 @@ rgtp_error_t rgtp_socket_create(const rgtp_config_t *cfg,
 {
     if (!out) return RGTP_ERR_INVALID_ARG;
 
+    /* Validate FEC parameters if provided */
+    if (cfg && cfg->fec_enabled) {
+        /* FEC parameters must be valid: 1 <= k < n <= 255 */
+        uint8_t fec_k = cfg->fec_k ? cfg->fec_k : 223;
+        uint8_t fec_n = cfg->fec_n ? cfg->fec_n : 255;
+        
+        if (fec_k == 0 || fec_n == 0 || fec_k >= fec_n || fec_n > 255) {
+            return RGTP_ERR_INVALID_ARG;
+        }
+        
+        /* Chunk size must accommodate FEC data symbols */
+        uint32_t chunk_size = cfg->chunk_size ? cfg->chunk_size : 1200;
+        if (chunk_size > 65507) {
+            return RGTP_ERR_INVALID_ARG;
+        }
+    }
+
     struct rgtp_socket_s *sock = rgtp_malloc(sizeof(*sock));
     if (!sock) return RGTP_ERR_NOMEM;
     memset(sock, 0, sizeof(*sock));

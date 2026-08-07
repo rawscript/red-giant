@@ -60,6 +60,11 @@ static rgtp_error_t serialize_pull_request(const rgtp_pull_request_t* p,
     /* Header(4) + exposure_id(16) + window_size(4) + loss_rate_q16(4)
      * + flags(4) + version_min(2) + version_max(2) = 36 bytes */
     const size_t LEN = 36u;
+    
+    /* Null pointer checks */
+    if (p == NULL || buf == NULL || out_len == NULL) {
+        return RGTP_ERR_INVALID_ARG;
+    }
     if (buf_size < LEN) return RGTP_ERR_INVALID_ARG;
 
     write_header(buf, RGTP_PKT_PULL_REQUEST, (uint16_t)LEN);
@@ -80,6 +85,11 @@ static rgtp_error_t serialize_manifest(const rgtp_manifest_t* p,
     /* Header(4) + exposure_id(16) + total_size(8) + chunk_count(4)
      * + chunk_size(4) + merkle_root(32) + fec_n(1) + fec_k(1) + flags(2) = 72 */
     const size_t LEN = 72u;
+    
+    /* Null pointer checks */
+    if (p == NULL || buf == NULL || out_len == NULL) {
+        return RGTP_ERR_INVALID_ARG;
+    }
     if (buf_size < LEN) return RGTP_ERR_INVALID_ARG;
 
     write_header(buf, RGTP_PKT_MANIFEST, (uint16_t)LEN);
@@ -101,6 +111,12 @@ static rgtp_error_t serialize_chunk_data(const rgtp_chunk_data_t* p,
 {
     /* Header(4) + exposure_id(16) + chunk_index(4) + payload(variable) */
     const size_t FIXED = 24u;
+    
+    /* Null pointer checks */
+    if (p == NULL || buf == NULL || out_len == NULL) {
+        return RGTP_ERR_INVALID_ARG;
+    }
+    
     const size_t LEN   = FIXED + p->payload_len;
     if (buf_size < LEN || LEN > 65535u) return RGTP_ERR_INVALID_ARG;
 
@@ -170,6 +186,16 @@ static rgtp_error_t serialize_nak(const rgtp_nak_t* p,
     /* Header(4) + exposure_id(16) + nak_count(2) + reserved(2)
      * + chunk_indices(nak_count*4) */
     const size_t FIXED = 24u;
+    
+    /* Null pointer checks */
+    if (p == NULL || buf == NULL || out_len == NULL) {
+        return RGTP_ERR_INVALID_ARG;
+    }
+    /* Validate chunk_indices pointer if nak_count > 0 */
+    if (p->nak_count > 0 && p->chunk_indices == NULL) {
+        return RGTP_ERR_INVALID_ARG;
+    }
+    
     const size_t LEN   = FIXED + (size_t)p->nak_count * 4u;
     if (buf_size < LEN || LEN > 65535u) return RGTP_ERR_INVALID_ARG;
 
@@ -191,6 +217,11 @@ static rgtp_error_t serialize_rate_report(const rgtp_rate_report_t* p,
     /* Header(4) + exposure_id(16) + rtt_us(4) + loss_rate_q16(4)
      * + window_size(4) + reserved(4) + timestamp_us(8) = 44 bytes */
     const size_t LEN = 44u;
+    
+    /* Null pointer checks */
+    if (p == NULL || buf == NULL || out_len == NULL) {
+        return RGTP_ERR_INVALID_ARG;
+    }
     if (buf_size < LEN) return RGTP_ERR_INVALID_ARG;
 
     write_header(buf, RGTP_PKT_RATE_REPORT, (uint16_t)LEN);
