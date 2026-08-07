@@ -218,13 +218,3 @@ rgtp_error_t rgtp_check_contact_status(const rgtp_surface_t* surface,
     if (out_time_left_s) *out_time_left_s = 0;
     return RGTP_OK;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Allocator stub
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-rgtp_error_t rgtp_set_allocator(const rgtp_allocator_t* alloc)
-{
-    (void)alloc;
-    return RGTP_ERR_NOT_SUPPORTED;
-}
