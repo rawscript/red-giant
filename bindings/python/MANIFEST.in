@@ -1,0 +1,27 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include setup.py
+
+# Include the rgtp package
+recursive-include rgtp *.py
+recursive-include rgtp *.pyd
+recursive-include rgtp *.so
+recursive-include rgtp *.dll
+recursive-include rgtp py.typed
+
+# Include tests
+recursive-include tests *.py
+
+# Include C library source (for building from source)
+graft ../../src
+graft ../../include
+graft ../../CMakeLists.txt
+graft ../../cmake
+
+# Prune unnecessary files
+prune *.egg-info
+prune __pycache__
+prune .git
+prune build
+prune dist
