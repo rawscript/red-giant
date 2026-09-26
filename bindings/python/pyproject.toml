@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=65", "wheel"]
+requires = ["setuptools>=65", "wheel", "cmake>=3.15"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rgtp"
-version = "1.0.0"
+version = "1.2.0"
 description = "Python bindings for the Red Giant Transport Protocol — stateless, receiver-driven, chunk-based transport over UDP and raw Ethernet"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,13 +12,18 @@ requires-python = ">=3.9"
 keywords = [
     "rgtp", "transport", "protocol", "networking",
     "udp", "autonomous-vehicles", "fec", "merkle",
+    "satellite", "ccsds", "space-communications",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Telecommunications Industry",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -27,6 +32,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Networking",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Communications",
 ]
 dependencies = []
 
@@ -45,14 +52,14 @@ Repository = "https://github.com/rawscript/red-giant"
 
 [project.scripts]
 rgtp-expose = "rgtp.cli:cmd_expose"
-rgtp-pull   = "rgtp.cli:cmd_pull"
+rgtp-pull = "rgtp.cli:cmd_pull"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["rgtp*"]
+[tool.setuptools]
+package-dir = {"" = "."}
+packages = ["rgtp"]
 
 [tool.setuptools.package-data]
-rgtp = ["py.typed"]
+rgtp = ["py.typed", "*.pyd", "*.so", "*.dll"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

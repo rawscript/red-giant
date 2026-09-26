@@ -37,51 +37,100 @@ Example — pull a file::
 from __future__ import annotations
 
 from ._rgtp import (
+    # Exceptions and error codes
     RgtpError,
-    _check,
+    
+    # Library lifecycle
     init,
     cleanup,
     version,
     strerror,
+    is_initialized,
+    
+    # Handles
     Socket,
     Surface,
+    
+    # Exposer API
     expose,
     poll,
+    
+    # Puller API
     pull_start,
     pull_next,
     progress,
+    
+    # Statistics
     get_stats,
+    get_latency_stats,
+    
+    # Satellite Communications API
+    get_satellite_stats,
+    schedule_contact,
+    update_link_parameters,
+    enable_store_forward,
+    get_contact_windows,
+    configure_ccsds,
+    send_emergency_tc,
+    calculate_link_budget,
+    configure_doppler,
+    check_contact_status,
+    
+    # Async wrappers
     async_expose,
     async_pull_next,
+    async_poll,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
 __author__ = "Red Giant Team"
 __license__ = "MIT"
 
 __all__ = [
-    # Exceptions
+    # Exceptions and error codes
     "RgtpError",
+    
     # Library lifecycle
     "init",
     "cleanup",
     "version",
     "strerror",
+    "is_initialized",
+    
     # Handles
     "Socket",
     "Surface",
+    
     # Exposer API
     "expose",
     "poll",
+    
     # Puller API
     "pull_start",
     "pull_next",
     "progress",
+    
     # Statistics
     "get_stats",
+    "get_latency_stats",
+    
+    # Satellite Communications API
+    "get_satellite_stats",
+    "schedule_contact",
+    "update_link_parameters",
+    "enable_store_forward",
+    "get_contact_windows",
+    "configure_ccsds",
+    "send_emergency_tc",
+    "calculate_link_budget",
+    "configure_doppler",
+    "check_contact_status",
+    
     # Async wrappers
     "async_expose",
     "async_pull_next",
+    "async_poll",
+    
     # Package metadata
     "__version__",
 ]
